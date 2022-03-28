@@ -43,7 +43,7 @@ class Protocol:
     rx_channel_ = rx
     tx_channel_ = tx
     tx_channel_.config_tx --idle_level=1
-    rx_channel_.config_rx --filter_ticks_thresh=30 --idle_threshold=500 --rx_buffer_size=rx_buffer_size
+    rx_channel_.config_rx --filter_ticks_thresh=30 --idle_threshold=2*IO_TIME_SLOT --rx_buffer_size=rx_buffer_size
 
     rmt.rmt_config_bidirectional_pin_ rx_channel_.pin.num tx_channel_.num
 
