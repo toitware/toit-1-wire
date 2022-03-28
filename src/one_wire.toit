@@ -157,18 +157,22 @@ class Protocol:
   Sends a reset to the receiver and reads whether the receiver is present.
   */
   reset -> bool:
+    old_threshold := rx_channel_.idle_threshold
+    rx_channel_.idle_threshold = RESET_LOW_DURATION_STD + 5
     periods := [
       RESET_LOW_DURATION_STD,
       480
     ]
-    received_signals := rmt.transfer_and_receive --rx=rx_channel_ --tx=tx_channel_
-        rmt.Signals.alternating --first_level=0 periods
-        4 * rmt.BYTES_PER_SIGNAL
-
-    return received_signals.size >= 3 and
+    try:
+      received_signals := rmt.transfer_and_receive --rx=rx_channel_ --tx=tx_channel_
+          rmt.Signals.alternating --first_level=0 periods
+          4 * rmt.BYTES_PER_SIGNAL
+      return received_signals.size >= 3 and
         // We observe the first low pulse that we sent.
         (received_signals.signal_level 0) == 0 and RESET_LOW_DURATION_STD - 2 <= (received_signals.signal_period 0) <= RESET_LOW_DURATION_STD + 10 and
         // We release the bus so it becomes high.
         (received_signals.signal_level 1) == 1 and (received_signals.signal_period 1) > 0 and
         // The receiver signals its presence.
         (received_signals.signal_level 2) == 0 and (received_signals.signal_period 2) > 0
+    finally:
+      rx_channel_.idle_threshold = old_threshold
