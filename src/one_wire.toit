@@ -54,19 +54,19 @@ class Protocol:
     is no interruption between the write and the read.
   */
   write_then_read bytes/ByteArray byte_count/int -> ByteArray:
-    signals := encode_write_then_read_signals_ bytes byte_count
-    expected_bytes_count := (bytes.size + byte_count) * SIGNALS_PER_BYTE * rmt.BYTES_PER_SIGNAL
-    received_signals := rmt.transfer_and_receive --rx=rx_channel_ --tx=tx_channel_ signals expected_bytes_count
-    return decode_signals_to_bytes_ received_signals --from=bytes.size byte_count
-
-  static encode_write_then_read_signals_ bytes/ByteArray read_bytes_count/int -> rmt.Signals:
-    signals := rmt.Signals (bytes.size + read_bytes_count) * SIGNALS_PER_BYTE
+    write_signals := rmt.Signals bytes.size * SIGNALS_PER_BYTE
     i := 0
     bytes.do:
-      encode_write_signals_ signals it --from=i
+      encode_write_signals_ write_signals it --from=i
       i += SIGNALS_PER_BYTE
-    encode_read_signals_ signals --from=i --bit_count=read_bytes_count * BITS_PER_BYTE
-    return signals
+
+    read_signal_count := byte_count * SIGNALS_PER_BYTE
+    read_signals := rmt.Signals read_signal_count
+    encode_read_signals_ read_signals --bit_count=byte_count * BITS_PER_BYTE
+
+    expected_bytes_count := (bytes.size + byte_count) * SIGNALS_PER_BYTE * rmt.BYTES_PER_SIGNAL
+    received_signals := rmt.transfer_and_receive --rx=rx_channel_ --tx=tx_channel_ --transfer=write_signals --receive=read_signals expected_bytes_count
+    return decode_signals_to_bytes_ received_signals byte_count
 
   /**
   Decodes the given $signals to bytes.
@@ -106,6 +106,7 @@ class Protocol:
 
   static encode_write_signals_ signals/rmt.Signals bits/int --from/int=0 --count/int=8 -> none:
     write_signal_count := count * SIGNALS_PER_BIT
+    assert: count <= 8
     assert: 0 <= from < signals.size
     assert: from + write_signal_count < signals.size
     count.repeat:
@@ -128,7 +129,8 @@ class Protocol:
   read_bits count/int -> int:
     read_signals := rmt.Signals count * SIGNALS_PER_BIT
     encode_read_signals_ read_signals --bit_count=count
-    signals := rmt.transfer_and_receive --rx=rx_channel_ --tx=tx_channel_ read_signals
+    write_signals := rmt.Signals 0
+    signals := rmt.transfer_and_receive --rx=rx_channel_ --tx=tx_channel_ --transfer=write_signals --receive=read_signals
         (count + 1) * SIGNALS_PER_BIT
     return decode_signals_to_bits_ signals --bit_count=count
 
@@ -165,7 +167,8 @@ class Protocol:
     ]
     try:
       received_signals := rmt.transfer_and_receive --rx=rx_channel_ --tx=tx_channel_
-          rmt.Signals.alternating --first_level=0 periods
+          --transfer=rmt.Signals 0
+          --receive=rmt.Signals.alternating --first_level=0 periods
           4 * rmt.BYTES_PER_SIGNAL
       return received_signals.size >= 3 and
         // We observe the first low pulse that we sent.
