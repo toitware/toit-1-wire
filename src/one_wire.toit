@@ -65,7 +65,7 @@ class Protocol:
     encode_read_signals_ read_signals --bit_count=byte_count * BITS_PER_BYTE
 
     expected_bytes_count := (bytes.size + byte_count) * SIGNALS_PER_BYTE * rmt.BYTES_PER_SIGNAL
-    received_signals := rmt.transfer_and_receive --rx=rx_channel_ --tx=tx_channel_ --transfer=write_signals --receive=read_signals expected_bytes_count
+    received_signals := rmt.transmit_and_receive --rx=rx_channel_ --tx=tx_channel_ --transmit=write_signals --receive=read_signals expected_bytes_count
     return decode_signals_to_bytes_ received_signals byte_count
 
   /**
@@ -99,7 +99,7 @@ class Protocol:
   write_bits value/int count/int -> none:
     signals :=  rmt.Signals count * SIGNALS_PER_BIT
     encode_write_signals_ signals value --count=count
-    rmt.transfer tx_channel_ signals
+    rmt.transmit tx_channel_ signals
 
   write_byte value/int -> none:
     write_bits value BITS_PER_BYTE
@@ -130,7 +130,7 @@ class Protocol:
     read_signals := rmt.Signals count * SIGNALS_PER_BIT
     encode_read_signals_ read_signals --bit_count=count
     write_signals := rmt.Signals 0
-    signals := rmt.transfer_and_receive --rx=rx_channel_ --tx=tx_channel_ --transfer=write_signals --receive=read_signals
+    signals := rmt.transmit_and_receive --rx=rx_channel_ --tx=tx_channel_ --transmit=write_signals --receive=read_signals
         (count + 1) * SIGNALS_PER_BIT
     return decode_signals_to_bits_ signals --bit_count=count
 
@@ -166,8 +166,8 @@ class Protocol:
       480
     ]
     try:
-      received_signals := rmt.transfer_and_receive --rx=rx_channel_ --tx=tx_channel_
-          --transfer=rmt.Signals 0
+      received_signals := rmt.transmit_and_receive --rx=rx_channel_ --tx=tx_channel_
+          --transmit=rmt.Signals 0
           --receive=rmt.Signals.alternating --first_level=0 periods
           4 * rmt.BYTES_PER_SIGNAL
       return received_signals.size >= 3 and
