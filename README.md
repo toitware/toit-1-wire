@@ -2,7 +2,7 @@
 
 Implementation of the 1-Wire protocol.
 
-This package is primarily useful for other drivers so they can communicate to sensors.
+This package is primarily useful for other drivers so they can communicate with sensors.
 For example the [ds18b20](https://github.com/toitware/toit-ds18b20) driver uses this
 package.
 
