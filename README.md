@@ -8,7 +8,7 @@ package.
 
 ## Implementation
 
-In order to achieve the required precise timings, the implementation off-loads the
+In order to achieve the required precise timings, the implementation offloads the
 signal generation and interpretation to the RMT (remote control) module of the ESP32.
 
 It uses 2 of the RMT channels (one for receiving, one for sending).
