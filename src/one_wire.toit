@@ -54,15 +54,8 @@ class Protocol:
     is no interruption between the write and the read.
   */
   write_then_read bytes/ByteArray byte_count/int -> ByteArray:
-    write_signals := rmt.Signals bytes.size * SIGNALS_PER_BYTE
-    i := 0
-    bytes.do:
-      encode_write_signals_ write_signals it --from=i
-      i += SIGNALS_PER_BYTE
-
-    read_signal_count := byte_count * SIGNALS_PER_BYTE
-    read_signals := rmt.Signals read_signal_count
-    encode_read_signals_ read_signals --bit_count=byte_count * BITS_PER_BYTE
+    write_signals := encode_write_signals_ bytes --count=(bytes.size * BITS_PER_BYTE)
+    read_signals := encode_read_signals_ --bit_count=(byte_count * BITS_PER_BYTE)
 
     expected_bytes_count := (bytes.size + byte_count) * SIGNALS_PER_BYTE * rmt.BYTES_PER_SIGNAL
     received_signals := rmt.transmit_and_receive --rx=rx_channel_ --tx=tx_channel_ --transmit=write_signals --receive=read_signals expected_bytes_count
@@ -85,26 +78,46 @@ class Protocol:
       result[it] = decode_signals_to_bits_ signals --from=write_signal_count + it * SIGNALS_PER_BYTE
     return result
 
-  static encode_read_signals_ signals/rmt.Signals --from/int=0 --bit_count/int:
-    assert: 0 <= from
-    assert: from + bit_count * SIGNALS_PER_BIT <= signals.size
+  static encode_read_signals_ --bit_count/int -> rmt.Signals:
+    signals := rmt.Signals (bit_count * SIGNALS_PER_BIT)
     bit_count.repeat:
-      i := from + it * SIGNALS_PER_BIT
-      signals.set_signal i READ_INIT_TIME_STD 0
-      signals.set_signal i + 1 IO_TIME_SLOT - READ_INIT_TIME_STD 1
+      i := it * SIGNALS_PER_BIT
+      signals.set i --period=READ_INIT_TIME_STD --level=0
+      signals.set (i + 1) --period=(IO_TIME_SLOT - READ_INIT_TIME_STD) --level=1
+    return signals
 
   /**
   Writes $count bits from $value to the receiver.
   */
   write_bits value/int count/int -> none:
-    signals :=  rmt.Signals count * SIGNALS_PER_BIT
-    encode_write_signals_ signals value --count=count
+    signals := encode_write_signals_ value --count=count
     rmt.transmit tx_channel_ signals
 
   write_byte value/int -> none:
     write_bits value BITS_PER_BYTE
 
-  static encode_write_signals_ signals/rmt.Signals bits/int --from/int=0 --count/int=8 -> none:
+  /**
+  Encodes the given integer or byte array to a sequence of signals.
+
+  The $bits_or_bytes must be either an integer, in which case the $count must be given.
+  If $bits_or_bytes is a byte array, then the $count must be equal to $bits_or_bytes * 8.
+  */
+  static encode_write_signals_ bits_or_bytes/any --count/int -> rmt.Signals:
+    // Add one bit for the termination signal.
+    signals :=  rmt.Signals (count * SIGNALS_PER_BIT)
+
+    if bits_or_bytes is int:
+      encode_write_signals_ signals bits_or_bytes --count=count
+    else:
+      assert: count == bits_or_bytes.size * BITS_PER_BYTE
+      offset := 0
+      bits_or_bytes.do:
+        encode_write_signals_ signals it --from=offset --count=BITS_PER_BYTE
+        offset += SIGNALS_PER_BYTE
+
+    return signals
+
+  static encode_write_signals_ signals/rmt.Signals bits/int --from/int=0 --count/int -> none:
     write_signal_count := count * SIGNALS_PER_BIT
     assert: count <= 8
     assert: 0 <= from < signals.size
@@ -117,8 +130,8 @@ class Protocol:
       else:
         delay = WRITE_0_LOW_DELAY
       i := from + it * SIGNALS_PER_BIT
-      signals.set_signal i delay 0
-      signals.set_signal i + 1 IO_TIME_SLOT - delay 1
+      signals.set i --period=delay --level=0
+      signals.set (i + 1) --period=(IO_TIME_SLOT - delay) --level=1
       bits = bits >> 1
 
   /**
@@ -127,8 +140,7 @@ class Protocol:
   Can at most read one byte, so $count must satisfy $count <= 8.
   */
   read_bits count/int -> int:
-    read_signals := rmt.Signals count * SIGNALS_PER_BIT
-    encode_read_signals_ read_signals --bit_count=count
+    read_signals := encode_read_signals_ --bit_count=count
     write_signals := rmt.Signals 0
     signals := rmt.transmit_and_receive --rx=rx_channel_ --tx=tx_channel_ --transmit=write_signals --receive=read_signals
         (count + 1) * SIGNALS_PER_BIT
@@ -145,18 +157,18 @@ class Protocol:
     result := 0
     bit_count.repeat:
       i := from + it * 2
-      if (signals.signal_level i) != 0: throw "unexpected signal"
+      if (signals.level i) != 0: throw "unexpected signal"
 
-      if (signals.signal_level i + 1) != 1: throw "unexpected signal"
+      if (signals.level i + 1) != 1: throw "unexpected signal"
 
       result = result >> 1
-      if (signals.signal_period i) < 17: result = result | 0x80
+      if (signals.period i) < 17: result = result | 0x80
     result = result >> (8 - bit_count)
 
     return result
 
   /**
-  Sends a reset to the receiver and reads whether the receiver is present.
+  Sends a reset to the receiver and reads whether a receiver is present.
   */
   reset -> bool:
     old_threshold := rx_channel_.idle_threshold
@@ -172,10 +184,10 @@ class Protocol:
           4 * rmt.BYTES_PER_SIGNAL
       return received_signals.size >= 3 and
         // We observe the first low pulse that we sent.
-        (received_signals.signal_level 0) == 0 and RESET_LOW_DURATION_STD - 2 <= (received_signals.signal_period 0) <= RESET_LOW_DURATION_STD + 10 and
+        (received_signals.level 0) == 0 and RESET_LOW_DURATION_STD - 2 <= (received_signals.period 0) <= RESET_LOW_DURATION_STD + 10 and
         // We release the bus so it becomes high.
-        (received_signals.signal_level 1) == 1 and (received_signals.signal_period 1) > 0 and
+        (received_signals.level 1) == 1 and (received_signals.period 1) > 0 and
         // The receiver signals its presence.
-        (received_signals.signal_level 2) == 0 and (received_signals.signal_period 2) > 0
+        (received_signals.level 2) == 0 and (received_signals.period 2) > 0
     finally:
       rx_channel_.idle_threshold = old_threshold
