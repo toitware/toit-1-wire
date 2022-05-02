@@ -66,7 +66,7 @@ class Protocol:
 
   Decoding starts from the given $from byte and decodes $byte_count bytes.
   */
-  static decode_signals_to_bytes_ signals/rmt.Signals --from/int=0 byte_count/int -> ByteArray:
+  decode_signals_to_bytes_ signals/rmt.Signals --from/int=0 byte_count/int -> ByteArray:
     assert: 0 <= from
     assert: 0 <= byte_count
 
@@ -78,7 +78,7 @@ class Protocol:
       result[it] = decode_signals_to_bits_ signals --from=write_signal_count + it * SIGNALS_PER_BYTE
     return result
 
-  static encode_read_signals_ --bit_count/int -> rmt.Signals:
+  encode_read_signals_ --bit_count/int -> rmt.Signals:
     signals := rmt.Signals (bit_count * SIGNALS_PER_BIT)
     bit_count.repeat:
       i := it * SIGNALS_PER_BIT
@@ -102,7 +102,7 @@ class Protocol:
   The $bits_or_bytes must be either an integer, in which case the $count must be given.
   If $bits_or_bytes is a byte array, then the $count must be equal to $bits_or_bytes * 8.
   */
-  static encode_write_signals_ bits_or_bytes/any --count/int -> rmt.Signals:
+  encode_write_signals_ bits_or_bytes/any --count/int -> rmt.Signals:
     signals := rmt.Signals (count * SIGNALS_PER_BIT)
 
     if bits_or_bytes is int:
@@ -116,7 +116,7 @@ class Protocol:
 
     return signals
 
-  static encode_write_signals_ signals/rmt.Signals bits/int --from/int=0 --count/int -> none:
+  encode_write_signals_ signals/rmt.Signals bits/int --from/int=0 --count/int -> none:
     write_signal_count := count * SIGNALS_PER_BIT
     assert: count <= 8
     assert: 0 <= from < signals.size
@@ -148,7 +148,7 @@ class Protocol:
   read_byte -> int:
     return read_bits BITS_PER_BYTE
 
-  static decode_signals_to_bits_ signals/rmt.Signals --from/int=0 --bit_count/int=8 -> int:
+  decode_signals_to_bits_ signals/rmt.Signals --from/int=0 --bit_count/int=8 -> int:
     assert: 0 <= from
     assert: 0 <= bit_count <= 8
     if from + bit_count * SIGNALS_PER_BIT > signals.size: throw INVALID_SIGNAL
