@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 import rmt
+import gpio
 
 /**
 Support for 1-wire protocol.
@@ -70,31 +71,30 @@ class Protocol:
   static SIGNALS_PER_BIT_ ::= 2
   static SIGNALS_PER_BYTE_ ::= BITS_PER_BYTE * SIGNALS_PER_BIT_
 
-  rx_channel_/rmt.Channel
-  tx_channel_/rmt.Channel
+  channel_ /rmt.BidirectionalChannel
 
   /**
-  Constructs a 1-Wire protocol using the given $rx and $tx channel.
+  Constructs a 1-Wire protocol using RMT channels.
 
   Configures the channels and the underlying pin for 1-wire.
 
   # Advanced
-  The $rx_buffer_size should be left unchanged unless the protocol requires
+  The $in_buffer_size should be left unchanged unless the protocol requires
     many bytes to be read in sequence without allowing any pause.
   Generally, it is recommended to just split read operations into managable chunks.
+
+  If no $in_channel_id and $out_channel_id is provided then the first free RMT channels
+    are used. This is almost always the correct choice. See $(rmt.Channel.constructor pin) for
+    use cases when this is not the case.
   */
-  constructor --rx/rmt.Channel --tx/rmt.Channel --rx_buffer_size/int=1024:
-    rx_channel_ = rx
-    tx_channel_ = tx
-    tx_channel_.config_tx --idle_level=1
+  constructor pin/gpio.Pin --in_buffer_size/int=1024 --in_channel_id/int?=null --out_channel_id/int?=null:
     // The default is slightly above 1us. For 1-wire we prefer a more sensitive filter.
     filter_ticks_threshold := 30
-    rx_channel_.config_rx
-        --filter_ticks_thresh=filter_ticks_threshold
-        --idle_threshold=IDLE_THRESHOLD_
-        --rx_buffer_size=rx_buffer_size
-
-    rmt.rmt_config_bidirectional_pin_ rx_channel_.pin.num tx_channel_.num
+    channel_ = rmt.BidirectionalChannel pin
+        --in_channel_id=in_channel_id
+        --in_filter_ticks_threshold = filter_ticks_threshold
+        --in_buffer_size=in_buffer_size
+        --out_channel_id=out_channel_id
 
   /**
   Writes the given bytes and then reads the given $byte_count number of bytes.
@@ -110,8 +110,11 @@ class Protocol:
     write_signals := encode_write_signals_ bytes --count=(bytes.size * BITS_PER_BYTE)
     read_signals := encode_read_signals_ --bit_count=(byte_count * BITS_PER_BYTE)
 
-    expected_bytes_count := (bytes.size + byte_count) * SIGNALS_PER_BYTE_ * rmt.BYTES_PER_SIGNAL
-    received_signals := rmt.transmit_and_receive --rx=rx_channel_ --tx=tx_channel_ --transmit=write_signals --receive=read_signals expected_bytes_count
+    expected_bytes_count := (bytes.size + byte_count) * SIGNALS_PER_BYTE_ * rmt.Signals.BYTES_PER_SIGNAL
+    received_signals := channel_.write_and_read
+        --before_read=write_signals
+        --during_read=read_signals
+        expected_bytes_count
     return decode_signals_to_bytes_ received_signals byte_count
 
   /**
@@ -144,7 +147,7 @@ class Protocol:
   */
   write_bits value/int count/int -> none:
     signals := encode_write_signals_ value --count=count
-    rmt.transmit tx_channel_ signals
+    channel_.write signals
 
   write_byte value/int -> none:
     write_bits value BITS_PER_BYTE
@@ -194,8 +197,10 @@ class Protocol:
   read_bits count/int -> int:
     read_signals := encode_read_signals_ --bit_count=count
     write_signals := rmt.Signals 0
-    signals := rmt.transmit_and_receive --rx=rx_channel_ --tx=tx_channel_ --transmit=write_signals --receive=read_signals
-        (count + 1) * SIGNALS_PER_BIT_ * rmt.BYTES_PER_SIGNAL
+    signals := channel_.write_and_read
+        --before_read=write_signals
+        --during_read=read_signals
+        round_up ((count + 1) * SIGNALS_PER_BIT_ * rmt.Signals.BYTES_PER_SIGNAL) 4
     return decode_signals_to_bits_ signals --bit_count=count
 
   read_byte -> int:
@@ -222,17 +227,17 @@ class Protocol:
   Sends a reset to the receiver and reads whether a receiver is present.
   */
   reset -> bool:
-    old_threshold := rx_channel_.idle_threshold
-    rx_channel_.idle_threshold = RESET_IDLE_THRESHOLD_
+    old_threshold := channel_.idle_threshold
+    channel_.idle_threshold = RESET_IDLE_THRESHOLD_
     periods := [
       RESET_LOW_,
       RESET_HIGH_,
     ]
     try:
-      received_signals := rmt.transmit_and_receive --rx=rx_channel_ --tx=tx_channel_
-          --transmit=rmt.Signals 0
-          --receive=rmt.Signals.alternating --first_level=0 periods
-          4 * rmt.BYTES_PER_SIGNAL
+      received_signals := channel_.write_and_read
+          --during_read=rmt.Signals.alternating --first_level=0 periods
+          4 * rmt.Signals.BYTES_PER_SIGNAL
+
       return received_signals.size >= 3 and
         // We observe the first low pulse that we sent.
         (received_signals.level 0) == 0 and (RESET_LOW_ - 2) <= (received_signals.period 0) <= (RESET_LOW_ + 10) and
@@ -243,4 +248,4 @@ class Protocol:
         //   really matter. Once we have the device pull low, we should be OK.
         (received_signals.level 2) == 0 and (received_signals.period 2) > 0
     finally:
-      rx_channel_.idle_threshold = old_threshold
+      channel_.idle_threshold = old_threshold
