@@ -78,7 +78,7 @@ class Protocol:
       result[it] = decode_signals_to_bits_ signals --from=write_signal_count + it * SIGNALS_PER_BYTE
     return result
 
-  static encode_read_signals_ --bit_count/int -> rmt.Signals:
+  encode_read_signals_ --bit_count/int -> rmt.Signals:
     signals := rmt.Signals (bit_count * SIGNALS_PER_BIT)
     bit_count.repeat:
       i := it * SIGNALS_PER_BIT
