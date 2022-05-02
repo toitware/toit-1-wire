@@ -103,8 +103,7 @@ class Protocol:
   If $bits_or_bytes is a byte array, then the $count must be equal to $bits_or_bytes * 8.
   */
   encode_write_signals_ bits_or_bytes/any --count/int -> rmt.Signals:
-    // Add one bit for the termination signal.
-    signals :=  rmt.Signals (count * SIGNALS_PER_BIT)
+    signals := rmt.Signals (count * SIGNALS_PER_BIT)
 
     if bits_or_bytes is int:
       encode_write_signals_ signals bits_or_bytes --count=count
