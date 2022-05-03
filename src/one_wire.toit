@@ -195,7 +195,7 @@ class Protocol:
     read_signals := encode_read_signals_ --bit_count=count
     write_signals := rmt.Signals 0
     signals := rmt.transmit_and_receive --rx=rx_channel_ --tx=tx_channel_ --transmit=write_signals --receive=read_signals
-        (count + 1) * SIGNALS_PER_BIT_
+        (count + 1) * SIGNALS_PER_BIT_ * rmt.BYTES_PER_SIGNAL
     return decode_signals_to_bits_ signals --bit_count=count
 
   read_byte -> int:
