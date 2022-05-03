@@ -234,8 +234,9 @@ class Protocol:
       RESET_HIGH_,
     ]
     try:
+      signals := rmt.Signals.alternating --first_level=0 periods
       received_signals := channel_.write_and_read
-          --during_read=rmt.Signals.alternating --first_level=0 periods
+          --during_read=signals
           4 * rmt.Signals.BYTES_PER_SIGNAL
 
       return received_signals.size >= 3 and
