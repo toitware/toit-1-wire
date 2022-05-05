@@ -71,7 +71,8 @@ class Protocol:
   static SIGNALS_PER_BIT_ ::= 2
   static SIGNALS_PER_BYTE_ ::= BITS_PER_BYTE * SIGNALS_PER_BIT_
 
-  channel_ /rmt.BidirectionalChannel
+  channel_in_  /rmt.Channel
+  channel_out_ /rmt.Channel
 
   /**
   Constructs a 1-Wire protocol using RMT channels.
@@ -90,32 +91,15 @@ class Protocol:
   constructor pin/gpio.Pin --in_buffer_size/int=1024 --in_channel_id/int?=null --out_channel_id/int?=null:
     // The default is slightly above 1us. For 1-wire we prefer a more sensitive filter.
     filter_ticks_threshold := 30
-    channel_ = rmt.BidirectionalChannel pin
-        --in_channel_id=in_channel_id
-        --in_filter_ticks_threshold = filter_ticks_threshold
-        --in_buffer_size=in_buffer_size
-        --out_channel_id=out_channel_id
 
-  /**
-  Writes the given bytes and then reads the given $byte_count number of bytes.
+    // Output channel must be configured before the input channel for
+    // `make_midirectional` to work
+    channel_out_ = rmt.Channel --output pin --channel_id=out_channel_id
+    channel_in_ = rmt.Channel --input pin --channel_id=in_channel_id
+        --filter_ticks_threshold=filter_ticks_threshold
+        --buffer_size=in_buffer_size
 
-  Should be used when the read must happen shortly after the write as there
-    is little interruption between the write and the read.
-
-  The function first writes the $bytes, waiting for the write to complete.
-    Then it starts reading the $byte_count. This sequence happens in C code
-    and the switch from writing to reading generally takes between 100 and 150us.
-  */
-  write_then_read bytes/ByteArray byte_count/int -> ByteArray:
-    write_signals := encode_write_signals_ bytes --count=(bytes.size * BITS_PER_BYTE)
-    read_signals := encode_read_signals_ --bit_count=(byte_count * BITS_PER_BYTE)
-
-    expected_bytes_count := (bytes.size + byte_count) * SIGNALS_PER_BYTE_ * rmt.Signals.BYTES_PER_SIGNAL
-    received_signals := channel_.write_and_read
-        --before_read=write_signals
-        --during_read=read_signals
-        expected_bytes_count
-    return decode_signals_to_bytes_ received_signals byte_count
+    rmt.Channel.make_bidirectional --in=channel_in_ --out=channel_out_
 
   /**
   Decodes the given $signals to bytes.
@@ -147,10 +131,13 @@ class Protocol:
   */
   write_bits value/int count/int -> none:
     signals := encode_write_signals_ value --count=count
-    channel_.write signals
+    channel_out_.write signals
 
   write_byte value/int -> none:
     write_bits value BITS_PER_BYTE
+
+  write bytes/ByteArray -> none:
+    bytes.do: write_byte it
 
   /**
   Encodes the given integer or byte array to a sequence of signals.
@@ -196,15 +183,20 @@ class Protocol:
   */
   read_bits count/int -> int:
     read_signals := encode_read_signals_ --bit_count=count
-    write_signals := rmt.Signals 0
-    signals := channel_.write_and_read
-        --before_read=write_signals
-        --during_read=read_signals
-        round_up ((count + 1) * SIGNALS_PER_BIT_ * rmt.Signals.BYTES_PER_SIGNAL) 4
-    return decode_signals_to_bits_ signals --bit_count=count
+    channel_in_.start_reading
+    channel_out_.write read_signals
+    received_signals := channel_in_.read
+    channel_in_.stop_reading
+    return decode_signals_to_bits_ received_signals --bit_count=count
 
   read_byte -> int:
     return read_bits BITS_PER_BYTE
+
+  read count/int -> ByteArray:
+    result := ByteArray count: 0
+    count.repeat:
+      result[it] = read_byte
+    return result
 
   decode_signals_to_bits_ signals/rmt.Signals --from/int=0 --bit_count/int=8 -> int:
     assert: 0 <= from
@@ -227,17 +219,18 @@ class Protocol:
   Sends a reset to the receiver and reads whether a receiver is present.
   */
   reset -> bool:
-    old_threshold := channel_.idle_threshold
-    channel_.idle_threshold = RESET_IDLE_THRESHOLD_
+    old_threshold := channel_in_.idle_threshold
+    channel_in_.idle_threshold = RESET_IDLE_THRESHOLD_
     periods := [
       RESET_LOW_,
       RESET_HIGH_,
     ]
     try:
       signals := rmt.Signals.alternating --first_level=0 periods
-      received_signals := channel_.write_and_read
-          --during_read=signals
-          4 * rmt.Signals.BYTES_PER_SIGNAL
+
+      channel_in_.start_reading
+      channel_out_.write signals
+      received_signals := channel_in_.read
 
       return received_signals.size >= 3 and
         // We observe the first low pulse that we sent.
@@ -249,4 +242,4 @@ class Protocol:
         //   really matter. Once we have the device pull low, we should be OK.
         (received_signals.level 2) == 0 and (received_signals.period 2) > 0
     finally:
-      channel_.idle_threshold = old_threshold
+      channel_in_.idle_threshold = old_threshold
