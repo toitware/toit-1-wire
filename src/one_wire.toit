@@ -13,12 +13,6 @@ The 1-wire protocol is implemented with ESP32's hardware supported RMT module.
 
 /**
 The 1-wire protocol.
-
-Use $read_bits and $write_bits to read or write bytes to the receiver.
-
-Use $write_then_read to write bytes to the receiver and then immediately start reading.
-
-Use $reset to reset the receiver.
 */
 class Protocol:
   // Exception thrown when the signal couldn't be decoded.
