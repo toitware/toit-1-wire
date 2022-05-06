@@ -87,7 +87,7 @@ class Protocol:
     filter_ticks_threshold := 30
 
     // Output channel must be configured before the input channel for
-    // `make_midirectional` to work
+    // `make_bidirectional` to work
     channel_out_ = rmt.Channel --output pin --channel_id=out_channel_id
     channel_in_ = rmt.Channel --input pin --channel_id=in_channel_id
         --filter_ticks_threshold=filter_ticks_threshold
