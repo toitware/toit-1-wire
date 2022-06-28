@@ -92,6 +92,7 @@ class Protocol:
     channel_in_ = rmt.Channel --input pin --channel_id=in_channel_id
         --filter_ticks_threshold=filter_ticks_threshold
         --buffer_size=in_buffer_size
+        --idle_threshold=IDLE_THRESHOLD_
 
     rmt.Channel.make_bidirectional --in=channel_in_ --out=channel_out_
 
