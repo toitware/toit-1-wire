@@ -4,6 +4,7 @@
 
 import rmt
 import gpio
+import crypto.crc
 
 /**
 Support for 1-wire protocol.
@@ -15,10 +16,11 @@ The 1-wire protocol is implemented with ESP32's hardware supported RMT module.
 A 1-wire bus.
 */
 class Bus:
-  static COMMAND_SELECT_ ::= 0x55
-  static COMMAND_SKIP_   ::= 0xCC
-  static COMMAND_SEARCH_ ::= 0xF0
-  static COMMAND_SEARCH_ALARM_ ::= 0xEC
+  static COMMAND_ROM_MATCH_  ::= 0x55
+  static COMMAND_ROM_SKIP_   ::= 0xCC
+  static COMMAND_ROM_SEARCH_ ::= 0xF0
+  static COMMAND_ROM_READ_   ::= 0x33
+  static COMMAND_ROM_SEARCH_ALARM_ ::= 0xEC
 
   /**
   Marker to indicate that all devices of the given family should be skipped
@@ -73,7 +75,7 @@ class Bus:
   */
   select device_id/int -> none:
     if not protocol_.reset: throw "NO DEVICE"
-    protocol_.write_byte COMMAND_SELECT_
+    protocol_.write_byte COMMAND_ROM_MATCH_
     protocol_.write_bits device_id 64
 
   /**
@@ -84,7 +86,70 @@ class Bus:
   */
   skip -> none:
     if not protocol_.reset: throw "NO DEVICE"
-    protocol_.write_byte COMMAND_SKIP_
+    protocol_.write_byte COMMAND_ROM_SKIP_
+
+  /**
+  Reads the device id of the single device on the bus.
+
+  If multiple devices are on the bus, then the result is
+    the bit-and of all device ids, and thus unusable.
+  */
+  read_device_id -> int:
+    if not protocol_.reset: throw "NO DEVICE"
+    protocol_.write_byte COMMAND_ROM_READ_
+    return protocol_.read_bits 64
+
+  write_bit value/int -> none:
+    protocol_.write_bits value 1
+
+  /**
+  Writes $count bits from $value to the pin.
+  */
+  write_bits value/int --count/int -> none:
+    protocol_.write_bits value count
+
+  /**
+  Writes a single byte $value to the pin.
+  */
+  write_byte value/int -> none:
+    protocol_.write_byte value
+
+  /**
+  Writes all given $bytes to the pin.
+
+  The $bytes are written individually, and not as a single bit sequence.
+  */
+  write bytes/ByteArray -> none:
+    protocol_.write bytes
+
+  /**
+  Reads $count bits from the pin.
+
+  The parameter $count must satisfy 0 <= $count <= 8. That is,
+    at most one byte can be read at a time.
+  */
+  read_bits count/int -> int:
+    return protocol_.read_bits count
+
+  /**
+  Reads a single byte from the pin.
+  */
+  read_byte -> int:
+    return protocol_.read_byte
+
+  /**
+  Reads $count bytes from the pin.
+
+  The reading operation assumes that the bytes are sent individually.
+  */
+  read count/int -> ByteArray:
+    return protocol_.read count
+
+  /**
+  Sends a reset and returns whether any device is present.
+  */
+  reset -> bool:
+    return protocol_.reset
 
   /**
   Searches for devices on the bus and calls the $block with
@@ -169,7 +234,7 @@ class Bus:
     while true:
       if not protocol_.reset: return
 
-      protocol_.write_byte (alarm_only ? COMMAND_SEARCH_ALARM_ : COMMAND_SEARCH_)
+      protocol_.write_byte (alarm_only ? COMMAND_ROM_SEARCH_ALARM_ : COMMAND_ROM_SEARCH_)
 
       for id_bit_position := 0; id_bit_position < 64; id_bit_position++:
         // Devices are supposed to reply to the search command (and
@@ -214,6 +279,10 @@ class Bus:
         // from now on.
         protocol_.write_bits id_bit 1
 
+      crc := crc8 id
+      if id >>> 56 != crc:
+        throw "CRC ERROR"
+
       // We have found a device.
       block_result := block.call id
 
@@ -227,6 +296,15 @@ class Bus:
         previous_last_unexplored_branch = last_unexplored_branch
       last_unexplored_branch = -1
       last_unexplored_family_branch = -1
+
+  static crc8 id/int:
+    crc := crc.Crc.little_endian 8 --polynomial=0x8C
+    data := ByteArray 7:
+      byte := id & 0xFF
+      id >>= 8
+      byte
+    crc.add data
+    return crc.get_as_int
 
 /**
 A 1-wire protocol.
@@ -485,10 +563,10 @@ class RmtProtocol implements Protocol:
   /**
   Reads $count bits from the pin.
 
-  The parameter $count must satisfy 0 <= $count <= 8. That is,
-    at most one byte can be read at a time.
+  The parameter $count must satisfy 0 <= $count <= 64.
   */
   read_bits count/int -> int:
+    if not 0 <= count <= 64: throw "INVALID_ARGUMENT"
     read_signals := encode_read_signals_ --bit_count=count
     channel_in_.start_reading
     channel_out_.write read_signals
@@ -512,18 +590,23 @@ class RmtProtocol implements Protocol:
 
   static decode_signals_to_bits_ signals/rmt.Signals --from/int=0 --bit_count/int=8 -> int:
     assert: 0 <= from
-    assert: 0 <= bit_count <= 8
+    if not 0 <= bit_count <= 64: throw "INVALID_ARGUMENT"
     if from + bit_count * SIGNALS_PER_BIT_ > signals.size: throw Protocol.INVALID_SIGNAL
 
-    result := 0
+    inverted_result := 0
     bit_count.repeat:
       i := from + it * 2
       if (signals.level i) != 0: throw Protocol.INVALID_SIGNAL
       if (signals.level i + 1) != 1: throw Protocol.INVALID_SIGNAL
 
-      result = result >> 1
-      if (signals.period i) < READ_HIGH_BEFORE_SAMPLE_: result = result | 0x80
-    result = result >> (8 - bit_count)
+      inverted_result <<= 1
+      if (signals.period i) < READ_HIGH_BEFORE_SAMPLE_: inverted_result |= 1
+
+    result := 0
+    bit_count.repeat:
+      result <<= 1
+      result |= inverted_result & 0x01
+      inverted_result >>= 1
 
     return result
 
