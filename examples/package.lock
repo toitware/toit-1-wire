@@ -1,0 +1,5 @@
+prefixes:
+  one_wire: ..
+packages:
+  ..:
+    path: ..
