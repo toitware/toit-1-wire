@@ -65,8 +65,10 @@ class Protocol:
   static SIGNALS_PER_BIT_ ::= 2
   static SIGNALS_PER_BYTE_ ::= BITS_PER_BYTE * SIGNALS_PER_BIT_
 
-  channel_in_  /rmt.Channel
-  channel_out_ /rmt.Channel
+  static RESET_RESPONSE_TIMEOUT_MS_ ::= 500
+
+  channel_in_  /rmt.Channel? := ?
+  channel_out_ /rmt.Channel? := ?
 
   /**
   Constructs a 1-Wire protocol using RMT channels.
@@ -89,6 +91,7 @@ class Protocol:
     // Output channel must be configured before the input channel for
     // `make_bidirectional` to work
     channel_out_ = rmt.Channel --output pin --channel_id=out_channel_id
+        --idle_level=1
     channel_in_ = rmt.Channel --input pin --channel_id=in_channel_id
         --filter_ticks_threshold=filter_ticks_threshold
         --buffer_size=in_buffer_size
@@ -96,24 +99,43 @@ class Protocol:
 
     rmt.Channel.make_bidirectional --in=channel_in_ --out=channel_out_
 
+  constructor.test_:
+    channel_in_ = null
+    channel_out_ = null
+
+  /**
+  Whether the protocol is closed.
+  */
+  is_closed -> bool:
+    return channel_in_ == null
+
+  /**
+  Closes the protocol and releases the underlying resources.
+  */
+  close -> none:
+    if is_closed: return
+    channel_in_.close
+    channel_out_.close
+    channel_in_ = null
+    channel_out_ = null
+
   /**
   Decodes the given $signals to bytes.
 
   Decoding starts from the given $from byte and decodes $byte_count bytes.
   */
-  decode_signals_to_bytes_ signals/rmt.Signals --from/int=0 byte_count/int -> ByteArray:
+  static decode_signals_to_bytes_ signals/rmt.Signals --from/int=0 byte_count/int -> ByteArray:
     assert: 0 <= from
     assert: 0 <= byte_count
 
     if from + byte_count * SIGNALS_PER_BYTE_ > signals.size: throw INVALID_SIGNAL
 
     write_signal_count := from * SIGNALS_PER_BYTE_
-    result := ByteArray byte_count: 0
-    byte_count.repeat:
-      result[it] = decode_signals_to_bits_ signals --from=write_signal_count + it * SIGNALS_PER_BYTE_
-    return result
+    return ByteArray byte_count:
+      decode_signals_to_bits_ signals
+          --from=(write_signal_count + it * SIGNALS_PER_BYTE_)
 
-  encode_read_signals_ --bit_count/int -> rmt.Signals:
+  static encode_read_signals_ --bit_count/int -> rmt.Signals:
     signals := rmt.Signals (bit_count * SIGNALS_PER_BIT_)
     bit_count.repeat:
       i := it * SIGNALS_PER_BIT_
@@ -122,15 +144,23 @@ class Protocol:
     return signals
 
   /**
-  Writes $count bits from $value to the receiver.
+  Writes $count bits from $value to the pin.
   */
   write_bits value/int count/int -> none:
     signals := encode_write_signals_ value --count=count
     channel_out_.write signals
 
+  /**
+  Writes a single byte $value to the pin.
+  */
   write_byte value/int -> none:
     write_bits value BITS_PER_BYTE
 
+  /**
+  Writes all given $bytes to the pin.
+
+  The $bytes are written individually, and not as a single bit sequence.
+  */
   write bytes/ByteArray -> none:
     bytes.do: write_byte it
 
@@ -140,7 +170,7 @@ class Protocol:
   The $bits_or_bytes must be either an integer, in which case the $count must be given.
   If $bits_or_bytes is a byte array, then the $count must be equal to $bits_or_bytes * 8.
   */
-  encode_write_signals_ bits_or_bytes/any --count/int -> rmt.Signals:
+  static encode_write_signals_ bits_or_bytes/any --count/int -> rmt.Signals:
     signals := rmt.Signals (count * SIGNALS_PER_BIT_)
 
     if bits_or_bytes is int:
@@ -154,7 +184,7 @@ class Protocol:
 
     return signals
 
-  encode_write_signals_ signals/rmt.Signals bits/int --from/int=0 --count/int -> none:
+  static encode_write_signals_ signals/rmt.Signals bits/int --from/int=0 --count/int -> none:
     write_signal_count := count * SIGNALS_PER_BIT_
     assert: count <= 8
     assert: 0 <= from < signals.size
@@ -172,9 +202,10 @@ class Protocol:
       bits = bits >> 1
 
   /**
-  Reads $count bits from the receiver.
+  Reads $count bits from the pin.
 
-  Can at most read one byte, so $count must satisfy $count <= 8.
+  The parameter $count must satisfy 0 <= $count <= 8. That is,
+    at most one byte can be read at a time.
   */
   read_bits count/int -> int:
     read_signals := encode_read_signals_ --bit_count=count
@@ -184,16 +215,21 @@ class Protocol:
     channel_in_.stop_reading
     return decode_signals_to_bits_ received_signals --bit_count=count
 
+  /**
+  Reads a single byte from the pin.
+  */
   read_byte -> int:
     return read_bits BITS_PER_BYTE
 
-  read count/int -> ByteArray:
-    result := ByteArray count: 0
-    count.repeat:
-      result[it] = read_byte
-    return result
+  /**
+  Reads $count bytes from the pin.
 
-  decode_signals_to_bits_ signals/rmt.Signals --from/int=0 --bit_count/int=8 -> int:
+  The reading operation assumes that the bytes are sent individually.
+  */
+  read count/int -> ByteArray:
+    return ByteArray count: read_byte
+
+  static decode_signals_to_bits_ signals/rmt.Signals --from/int=0 --bit_count/int=8 -> int:
     assert: 0 <= from
     assert: 0 <= bit_count <= 8
     if from + bit_count * SIGNALS_PER_BIT_ > signals.size: throw INVALID_SIGNAL
@@ -225,16 +261,20 @@ class Protocol:
 
       channel_in_.start_reading
       channel_out_.write signals
-      received_signals := channel_in_.read
+      catch:
+        with_timeout --ms=RESET_RESPONSE_TIMEOUT_MS_:
+          received_signals := channel_in_.read
 
-      return received_signals.size >= 3 and
-        // We observe the first low pulse that we sent.
-        (received_signals.level 0) == 0 and (RESET_LOW_ - 2) <= (received_signals.period 0) <= (RESET_LOW_ + 10) and
-        // We release the bus so it becomes high.
-        (received_signals.level 1) == 1 and (received_signals.period 1) > 0 and
-        // The receiver signals its presence.
-        // In theory we could ensure that we sample at the right time, but it doesn't
-        //   really matter. Once we have the device pull low, we should be OK.
-        (received_signals.level 2) == 0 and (received_signals.period 2) > 0
+          return received_signals.size >= 3 and
+            // We observe the first low pulse that we sent.
+            (received_signals.level 0) == 0 and (RESET_LOW_ - 2) <= (received_signals.period 0) <= (RESET_LOW_ + 10) and
+            // We release the pin so it becomes high.
+            (received_signals.level 1) == 1 and (received_signals.period 1) > 0 and
+            // The receiver signals its presence.
+            // In theory we could ensure that we sample at the right time, but it doesn't
+            //   really matter. Once we have the device pull low, we should be OK.
+            (received_signals.level 2) == 0 and (received_signals.period 2) > 0
+      // If we are here, we had a timeout.
+      return false
     finally:
       channel_in_.idle_threshold = old_threshold
