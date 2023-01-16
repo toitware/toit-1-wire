@@ -60,7 +60,6 @@ class Bus:
       protocol_.close
       protocol_ = null
 
-
   /**
   Selects the device with the given $device_id.
 

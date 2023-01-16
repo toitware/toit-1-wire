@@ -1,0 +1,3 @@
+dependencies:
+  one_wire:
+    path: ..
