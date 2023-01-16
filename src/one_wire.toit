@@ -12,12 +12,286 @@ The 1-wire protocol is implemented with ESP32's hardware supported RMT module.
 */
 
 /**
-The 1-wire protocol.
+A 1-wire bus.
 */
-class Protocol:
-  // Exception thrown when the signal couldn't be decoded.
+class Bus:
+  static COMMAND_SELECT_ ::= 0x55
+  static COMMAND_SKIP_   ::= 0xCC
+  static COMMAND_SEARCH_ ::= 0xF0
+  static COMMAND_SEARCH_ALARM_ ::= 0xEC
+
+  /**
+  Marker to indicate that all devices of the given family should be skipped
+    during the search.
+
+  A block should return this value when no other device of the family should
+    be given to the block.
+  */
+  static SKIP_FAMILY ::= Object
+
+  protocol_/Protocol? := ?
+
+  /**
+  Constructs a 1-wire bus using the given $protocol.
+  */
+  constructor.protocol protocol:
+    protocol_ = protocol
+
+  /**
+  Constructs a 1-wire bus for the given $pin.
+
+  This constructor uses the default parameters for the protocol. Use
+    $Bus.protocol if you need to customize the protocol.
+  */
+  constructor pin/gpio.Pin:
+    protocol_ = Protocol pin
+
+  /** Whether this bus is closed. */
+  is_closed -> bool:
+    return protocol_ == null
+
+  /**
+  Closes this bus and releases the underlying resources.
+  */
+  close:
+    if protocol_:
+      protocol_.close
+      protocol_ = null
+
+
+  /**
+  Selects the device with the given $device_id.
+
+  The $device_id is a byte array of length 8.
+  */
+  select device_id/int -> none:
+    if not protocol_.reset: throw "NO DEVICE"
+    protocol_.write_byte COMMAND_SELECT_
+    protocol_.write_bits device_id 64
+
+  /**
+  Skips the device selection step.
+
+  This is useful when there is only one device on the bus, or
+    if multiple devices are addressed at the same time.
+  */
+  skip -> none:
+    if not protocol_.reset: throw "NO DEVICE"
+    protocol_.write_byte COMMAND_SKIP_
+
+  /**
+  Searches for devices on the bus and calls the $block with
+    the device id of each found device.
+
+  If $alarm_only is set, then searches for devices that have
+    triggered an alarm.
+
+  If a $family is given, then only devices with that family
+    are searched for.
+  */
+  do --alarm_only/bool=false --family/int?=null [block] -> none:
+    if family:
+      // Start the search with the family id.
+      // By setting the previous_last_unexplored_branch to 64 (any higher value
+      // would work too), we are letting
+      // the search always take the '0' branch for the non-family bits.
+      // Note that the search overwrites the id for non-collision bits.
+      // As a consequence, the search will find the first device with an
+      // id that is greater or equal to the family id.
+      search_
+          --alarm_only=alarm_only
+          --start_id=family
+          --fixed_bits=8
+          : | id |
+            if id & 0xFF != family: return
+            block.call id
+    else:
+      search_ --alarm_only=alarm_only block
+
+  /**
+  Searches for the device with the given id.
+
+  Returns true if the device responded.
+  */
+  ping id/int -> bool:
+    search_ --no-alarm_only --start_id=id --fixed_bits=64: | found_id |
+      return found_id == id
+    return false
+
+  search_ --alarm_only/bool --start_id/int=0 --fixed_bits/int=-1 [block]-> none:
+    // Search algorithm is explained here:
+    //   https://www.analog.com/en/app-notes/1wire-search-algorithm.html
+
+    // Summary:
+    // The controller starts by sending out a 'search' command.
+    // The devices respond with the least-significant bit of their ID and
+    // the complement of that bit. This allows the controller to detect collisions,
+    // since both bits are 0 in that case (open-drain).
+    // The controller than chooses the path to take by emitting the next bit.
+    // If there was no collision, that's the one it received. Otherwise it chooses
+    // one of the two possibilities. At the same time, it remembers the bit-position
+    // at which it had to make a choice.
+    // Once a full id has been constructed, the controller resets the bus and
+    // tries again. It uses the constructed id for all the bits until the last
+    // decision point, and then takes the other path. In the process, it also
+    // updates the last decision point, so it can continue from there the next time.
+    // This process is repeated until all devices have been found.
+
+    // The 'id' variable accumulates the bits of the branches we take.
+    // The bits in the range [0..last_branch] are also used to remember
+    // the path that was taken until the 'last_branch' bit.
+    // Note that the currently unused id bits may not be '0', due to back tracking.
+    id := start_id
+
+    // Keeps track of the last bit position where we branched and still have to
+    // take the second branch.
+    // By construction the path we still have to take is the '1' path.
+    // In the literare this variable is usually called 'last_zero'.
+    last_unexplored_branch := -1
+    // Keeps track of the last bit position where we branched and still have to
+    // take the second branch.
+    // This variable (contrary to 'last_branch') is only used for the family bits
+    // (the first 8 bits).
+    last_unexplored_family_branch := -1
+    // Keeps track of the last branching point of a previous iteration.
+    // We are going to take the same path up to this point.
+    // In the literature this variable is usually called 'last_discrepancy'.
+    // This variable is updated once all 64 bits of a device id have been found.
+    previous_last_unexplored_branch := fixed_bits
+
+    while true:
+      if not protocol_.reset: return
+
+      protocol_.write_byte (alarm_only ? COMMAND_SEARCH_ALARM_ : COMMAND_SEARCH_)
+
+      for id_bit_position := 0; id_bit_position < 64; id_bit_position++:
+        // Devices are supposed to reply to the search command (and
+        // bit-selections below) by sending their ID bit, and the complement.
+        // Since the one-wire bus is open-drain, 0 values win, and we can
+        // detect collisions by reading to 0 bits.
+
+        id_bit := protocol_.read_bits 1
+        id_complement_bit := protocol_.read_bits 1
+
+        if id_bit == 1 and id_complement_bit == 1:
+          // No response.
+          // The 'reset' indicated that a device was present, but nothing
+          // responded. Similarly, we could be here, because there was a
+          // collision, but then too, we should see a device.
+          throw "BUS ERROR"
+
+        if id_bit == 0 and id_complement_bit == 0:
+          // Collision.
+          if id_bit_position < previous_last_unexplored_branch:
+            // Take the same path as the last time.
+            id_bit = (id >> id_bit_position) & 1
+          else if id_bit_position == previous_last_unexplored_branch:
+            // We took '0' the first time. Now we take '1'.
+            id_bit = 1
+          else:
+            // New discrepancy. Take '0' first.
+            id_bit = 0
+
+          if id_bit == 0:
+            // Remember where we have an unexplored branch.
+            last_unexplored_branch = id_bit_position
+            if id_bit_position < 8:
+              last_unexplored_family_branch = last_unexplored_branch
+
+        // Update the id with the chosen bit.
+        id &= ~(1 << id_bit_position)
+        id |= id_bit << id_bit_position
+
+        // Notify the devices of the choice.
+        // All devices that have an id with a different bit are silent
+        // from now on.
+        protocol_.write_bits id_bit 1
+
+      // We have found a device.
+      block_result := block.call id
+
+      // Continue with the next iteration, unless there is no branching
+      // point left.
+      if last_unexplored_branch == -1: return
+
+      if block_result == SKIP_FAMILY:
+        previous_last_unexplored_branch = last_unexplored_family_branch
+      else:
+        previous_last_unexplored_branch = last_unexplored_branch
+      last_unexplored_branch = -1
+      last_unexplored_family_branch = -1
+
+/**
+A 1-wire protocol.
+*/
+interface Protocol:
+  /** Exception thrown when the signal couldn't be decoded. */
   static INVALID_SIGNAL ::= "INVALID_SIGNAL"
 
+  /**
+  Constructs a new RMT-based protocol.
+
+  See $RmtProtocol.constructor.
+  */
+  constructor pin/gpio.Pin --in_buffer_size/int=1024 --in_channel_id/int?=null --out_channel_id/int?=null:
+    return RmtProtocol pin --in_buffer_size=in_buffer_size --in_channel_id=in_channel_id --out_channel_id=out_channel_id
+
+  /**
+  Whether the protocol is closed.
+  */
+  is_closed -> bool
+
+  /**
+  Closes the protocol and releases the underlying resources.
+  */
+  close -> none
+
+  /**
+  Writes $count bits from $value to the pin.
+  */
+  write_bits value/int count/int -> none
+
+  /**
+  Writes a single byte $value to the pin.
+  */
+  write_byte value/int -> none
+
+  /**
+  Writes all given $bytes to the pin.
+
+  The $bytes are written individually, and not as a single bit sequence.
+  */
+  write bytes/ByteArray -> none
+
+  /**
+  Reads $count bits from the pin.
+
+  The parameter $count must satisfy 0 <= $count <= 8. That is,
+    at most one byte can be read at a time.
+  */
+  read_bits count/int -> int
+
+  /**
+  Reads a single byte from the pin.
+  */
+  read_byte -> int
+
+  /**
+  Reads $count bytes from the pin.
+
+  The reading operation assumes that the bytes are sent individually.
+  */
+  read count/int -> ByteArray
+
+  /**
+  Sends a reset and returns whether any device is present.
+  */
+  reset -> bool
+
+/**
+The 1-wire protocol.
+*/
+class RmtProtocol implements Protocol:
   /*
   Timings: https://www.maximintegrated.com/en/design/technical-documents/app-notes/1/126.html
 
@@ -128,7 +402,7 @@ class Protocol:
     assert: 0 <= from
     assert: 0 <= byte_count
 
-    if from + byte_count * SIGNALS_PER_BYTE_ > signals.size: throw INVALID_SIGNAL
+    if from + byte_count * SIGNALS_PER_BYTE_ > signals.size: throw Protocol.INVALID_SIGNAL
 
     write_signal_count := from * SIGNALS_PER_BYTE_
     return ByteArray byte_count:
@@ -232,13 +506,13 @@ class Protocol:
   static decode_signals_to_bits_ signals/rmt.Signals --from/int=0 --bit_count/int=8 -> int:
     assert: 0 <= from
     assert: 0 <= bit_count <= 8
-    if from + bit_count * SIGNALS_PER_BIT_ > signals.size: throw INVALID_SIGNAL
+    if from + bit_count * SIGNALS_PER_BIT_ > signals.size: throw Protocol.INVALID_SIGNAL
 
     result := 0
     bit_count.repeat:
       i := from + it * 2
-      if (signals.level i) != 0: throw INVALID_SIGNAL
-      if (signals.level i + 1) != 1: throw INVALID_SIGNAL
+      if (signals.level i) != 0: throw Protocol.INVALID_SIGNAL
+      if (signals.level i + 1) != 1: throw Protocol.INVALID_SIGNAL
 
       result = result >> 1
       if (signals.period i) < READ_HIGH_BEFORE_SAMPLE_: result = result | 0x80

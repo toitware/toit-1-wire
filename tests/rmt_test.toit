@@ -24,27 +24,27 @@ test_decode_signals_to_bits:
     6,  64,  // 1
   ]
   expect_equals 0b11011000
-    Protocol.decode_signals_to_bits_ signals
+    RmtProtocol.decode_signals_to_bits_ signals
   expect_equals 0b01101100
-    Protocol.decode_signals_to_bits_ signals --from=2 --bit_count=7
+    RmtProtocol.decode_signals_to_bits_ signals --from=2 --bit_count=7
   expect_equals 0b0
-    Protocol.decode_signals_to_bits_ signals --from=0 --bit_count=0
+    RmtProtocol.decode_signals_to_bits_ signals --from=0 --bit_count=0
   expect_equals 0b1
-    Protocol.decode_signals_to_bits_ signals --from=14 --bit_count=1
+    RmtProtocol.decode_signals_to_bits_ signals --from=14 --bit_count=1
 
   // Decoding should start on a low edge (level = 0).
   expect_throw Protocol.INVALID_SIGNAL:
-    Protocol.decode_signals_to_bits_ signals --from=1 --bit_count=1
+    RmtProtocol.decode_signals_to_bits_ signals --from=1 --bit_count=1
 
   expect_throw Protocol.INVALID_SIGNAL:
-    Protocol.decode_signals_to_bits_ signals --from=0 --bit_count=10
+    RmtProtocol.decode_signals_to_bits_ signals --from=0 --bit_count=10
 
   signals = rmt.Signals 2
   signals.set 0 --period=0 --level=0
   signals.set 1 --period=0 --level=0
   // The low edge should be followed by a high edge (level = 1).
   expect_throw Protocol.INVALID_SIGNAL:
-    Protocol.decode_signals_to_bits_ signals --from=0 --bit_count=1
+    RmtProtocol.decode_signals_to_bits_ signals --from=0 --bit_count=1
 
 test_decode_signals_to_bytes:
   periods := [
@@ -70,39 +70,39 @@ test_decode_signals_to_bytes:
   signals := rmt.Signals.alternating --first_level=0 periods
 
   expect_bytes_equal #[0xD8]
-    Protocol.decode_signals_to_bytes_ signals 1
+    RmtProtocol.decode_signals_to_bytes_ signals 1
 
   expect_bytes_equal #[0xCC]
-    Protocol.decode_signals_to_bytes_ signals --from=1 1
+    RmtProtocol.decode_signals_to_bytes_ signals --from=1 1
 
   expect_bytes_equal #[0xD8, 0xCC]
-    Protocol.decode_signals_to_bytes_ signals 2
+    RmtProtocol.decode_signals_to_bytes_ signals 2
 
   expect_bytes_equal #[]
-    Protocol.decode_signals_to_bytes_ signals 0
+    RmtProtocol.decode_signals_to_bytes_ signals 0
 
   expect_throw Protocol.INVALID_SIGNAL:
-    Protocol.decode_signals_to_bytes_ signals --from=1 2
+    RmtProtocol.decode_signals_to_bytes_ signals --from=1 2
 
 
   signals = rmt.Signals.alternating --first_level=0 []
   expect_bytes_equal #[]
-    Protocol.decode_signals_to_bytes_ signals 0
+    RmtProtocol.decode_signals_to_bytes_ signals 0
 
   expect_throw Protocol.INVALID_SIGNAL:
-    Protocol.decode_signals_to_bytes_ signals --from=0 1
+    RmtProtocol.decode_signals_to_bytes_ signals --from=0 1
 
   expect_throw Protocol.INVALID_SIGNAL:
-    Protocol.decode_signals_to_bytes_ signals --from=1 1
+    RmtProtocol.decode_signals_to_bytes_ signals --from=1 1
 
 test_encode_read_signals:
-  signals := Protocol.encode_read_signals_ --bit_count=8
+  signals := RmtProtocol.encode_read_signals_ --bit_count=8
 
   8.repeat:
     expect_equals 0 (signals.level it * 2)
-    expect_equals Protocol.READ_LOW_ (signals.period it * 2)
+    expect_equals RmtProtocol.READ_LOW_ (signals.period it * 2)
     expect_equals 1 (signals.level it * 2 + 1)
-    expect_equals Protocol.READ_HIGH_ (signals.period it * 2 + 1)
+    expect_equals RmtProtocol.READ_HIGH_ (signals.period it * 2 + 1)
 
 test_encode_write_signals:
   periods := [
@@ -116,7 +116,7 @@ test_encode_write_signals:
     6,  64,  // 1
     6,  64,  // 1
   ]
-  signals := Protocol.encode_write_signals_ 0xDA --count=16
+  signals := RmtProtocol.encode_write_signals_ 0xDA --count=16
   8.repeat:
     expect_equals 0
       signals.level it * 2
@@ -128,7 +128,7 @@ test_encode_write_signals:
       signals.period it * 2 + 1
 
   signals = rmt.Signals 16
-  Protocol.encode_write_signals_ signals 0xDA --count=6
+  RmtProtocol.encode_write_signals_ signals 0xDA --count=6
   6.repeat:
     expect_equals 0
       signals.level it * 2
