@@ -8,7 +8,8 @@ import monitor
 
 main:
   test_search
-  test_verify
+  test_ping
+  test_id_crc
 
 class TestDevice:
   static STATE_IDLE ::= 0
@@ -114,16 +115,84 @@ class TestProtocol implements Protocol:
 
 test_search:
   devices := [
-    // TODO(florian): fix CRC of first and third device.
-    TestDevice 0x0000_0000_0000_0001,
+    TestDevice 0x3D00_0000_0000_0001,
     TestDevice 0x5100_0000_FF2A_5A28,
-    TestDevice 0x5100_0001_FF2A_5A28,
+    TestDevice 0xFA00_0001_FF2A_5A28,
   ]
   protocol := TestProtocol devices
 
   bus := Bus.protocol protocol
 
-  bus.do: print "$(%016x it)"
+  found := {}
+  bus.do:
+    found.add it
 
+  expect_equals 3 found.size
 
-test_verify:
+  devices.do: expect (found.contains it.id)
+
+  // Search for families.
+  found = {}
+  bus.do --family=0x01:
+    found.add it
+
+  expect_equals 1 found.size
+  expect (found.contains 0x3D00_0000_0000_0001)
+
+  // Search for 0x28 family.
+  found = {}
+  bus.do --family=0x28:
+    found.add it
+
+  expect_equals 2 found.size
+  expect (found.contains 0x5100_0000_FF2A_5A28)
+  expect (found.contains 0xFA00_0001_FF2A_5A28)
+
+  // Skip family.
+  found = {}
+
+  bus.do:
+    found.add it
+    if it & 0xFF == 0x28: continue.do Bus.SKIP_FAMILY
+
+  // Because we skipped the remaining entries of the 0x28 family, we should
+  // only find the first entry.
+  expect_equals 2 found.size
+  expect (found.contains 0x3D00_0000_0000_0001)
+  // The one-wire bus goes from the LSB to the MSB, trying '0'
+  // bits first.
+  expect (found.contains 0x5100_0000_FF2A_5A28)
+
+test_ping:
+  devices := [
+    // TODO(florian): fix CRC of first and third device.
+    TestDevice 0x3D00_0000_0000_0001,
+    TestDevice 0x5100_0000_FF2A_5A28,
+    TestDevice 0xFA00_0001_FF2A_5A28,
+  ]
+  protocol := TestProtocol devices
+  bus := Bus.protocol protocol
+
+  devices.do:
+    expect (bus.ping it.id)
+
+  expect_not (bus.ping 0x3D00_0000_0000_0000)
+  expect_not (bus.ping 0x5100_0000_FF2A_5A29)
+  expect_not (bus.ping 0xFA00_0001_FF2A_5A29)
+
+test_id_crc:
+  ids := []
+  // Id from https://www.analog.com/en/technical-articles/understanding-and-using-cyclic-redundancy-checks-with-maxim-1wire-and-ibutton-products.html
+  ids.add 0xA200_0000_01B8_1C02
+  // Ids found on the internet:
+  ids.add 0xD7AA_13C0_2916_9085
+  ids.add 0xA600_0801_9470_1310
+  ids.add 0x2E00_0002_8FAD_4928
+  // The ids we use in the rest of the tests:
+  ids.add 0x3D00_0000_0000_0001
+  ids.add 0x5100_0000_FF2A_5A28
+  ids.add 0xFA00_0001_FF2A_5A28
+
+  ids.do:
+    crc := Bus.crc8 it
+    expect_equals (it >>> 56) crc
