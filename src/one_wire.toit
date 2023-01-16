@@ -58,13 +58,6 @@ class Bus:
       protocol_.close
       protocol_ = null
 
-  // /**
-  // Resets the bus.
-
-  // Returns whether a device is attached to the bus.
-  // */
-  // reset -> bool:
-  //   return protocol_.reset
 
   /**
   Selects the device with the given $device_id.
