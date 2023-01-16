@@ -115,7 +115,6 @@ class TestProtocol implements Protocol:
 
 test_search:
   devices := [
-    // TODO(florian): fix CRC of first and third device.
     TestDevice 0x3D00_0000_0000_0001,
     TestDevice 0x5100_0000_FF2A_5A28,
     TestDevice 0xFA00_0001_FF2A_5A28,
