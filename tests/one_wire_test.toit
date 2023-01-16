@@ -1,4 +1,3 @@
-
 // Copyright (C) 2022 Toitware ApS.
 // Use of this source code is governed by a Zero-Clause BSD license that can
 // be found in the TESTS_LICENSE file.
@@ -34,17 +33,17 @@ test_decode_signals_to_bits:
     Protocol.decode_signals_to_bits_ signals --from=14 --bit_count=1
 
   // Decoding should start on a low edge (level = 0).
-  expect_throw "unexpected signal":
+  expect_throw Protocol.INVALID_SIGNAL:
     Protocol.decode_signals_to_bits_ signals --from=1 --bit_count=1
 
   expect_throw Protocol.INVALID_SIGNAL:
     Protocol.decode_signals_to_bits_ signals --from=0 --bit_count=10
 
   signals = rmt.Signals 2
-  signals.set_signal 0 0 0
-  signals.set_signal 1 0 0
+  signals.set 0 --period=0 --level=0
+  signals.set 1 --period=0 --level=0
   // The low edge should be followed by a high edge (level = 1).
-  expect_throw "unexpected signal":
+  expect_throw Protocol.INVALID_SIGNAL:
     Protocol.decode_signals_to_bits_ signals --from=0 --bit_count=1
 
 test_decode_signals_to_bytes:
@@ -86,7 +85,7 @@ test_decode_signals_to_bytes:
     Protocol.decode_signals_to_bytes_ signals --from=1 2
 
 
-  signals = rmt.Signals.alternating --first_level=0 #[]
+  signals = rmt.Signals.alternating --first_level=0 []
   expect_bytes_equal #[]
     Protocol.decode_signals_to_bytes_ signals 0
 
@@ -97,42 +96,13 @@ test_decode_signals_to_bytes:
     Protocol.decode_signals_to_bytes_ signals --from=1 1
 
 test_encode_read_signals:
-  signals := rmt.Signals 16
-
-  Protocol.encode_read_signals_ signals --bit_count=8
+  signals := Protocol.encode_read_signals_ --bit_count=8
 
   8.repeat:
-    expect_equals 0
-      signals.signal_level it * 2
-    expect_equals Protocol.READ_INIT_TIME_STD
-      signals.signal_period it * 2
-    expect_equals 1
-      signals.signal_level it * 2 + 1
-    expect_equals Protocol.IO_TIME_SLOT - Protocol.READ_INIT_TIME_STD
-      signals.signal_period it * 2 + 1
-
-  signals = rmt.Signals 32
-
-  Protocol.encode_read_signals_ signals --from=16 --bit_count=8
-
-  // The first 16 signals are untouched.
-  16.repeat:
-    expect_equals 0
-      signals.signal_level it
-    expect_equals 0
-      signals.signal_period it
-
-  // The remaining 16 signals are encoded for reading.
-  8.repeat:
-    i := 16 + it * 2
-    expect_equals 0
-      signals.signal_level i
-    expect_equals Protocol.READ_INIT_TIME_STD
-      signals.signal_period i
-    expect_equals 1
-      signals.signal_level i + 1
-    expect_equals Protocol.IO_TIME_SLOT - Protocol.READ_INIT_TIME_STD
-      signals.signal_period i + 1
+    expect_equals 0 (signals.level it * 2)
+    expect_equals Protocol.READ_LOW_ (signals.period it * 2)
+    expect_equals 1 (signals.level it * 2 + 1)
+    expect_equals Protocol.READ_HIGH_ (signals.period it * 2 + 1)
 
 test_encode_write_signals:
   periods := [
@@ -146,48 +116,25 @@ test_encode_write_signals:
     6,  64,  // 1
     6,  64,  // 1
   ]
-  signals := rmt.Signals 16
-  Protocol.encode_write_signals_ signals 0xDA
+  signals := Protocol.encode_write_signals_ 0xDA --count=16
   8.repeat:
     expect_equals 0
-      signals.signal_level it * 2
+      signals.level it * 2
     expect_equals periods[it * 2]
-      signals.signal_period it * 2
+      signals.period it * 2
     expect_equals 1
-      signals.signal_level it * 2 + 1
+      signals.level it * 2 + 1
     expect_equals periods[it * 2 + 1]
-      signals.signal_period it * 2 + 1
+      signals.period it * 2 + 1
 
   signals = rmt.Signals 16
   Protocol.encode_write_signals_ signals 0xDA --count=6
   6.repeat:
     expect_equals 0
-      signals.signal_level it * 2
+      signals.level it * 2
     expect_equals periods[it * 2]
-      signals.signal_period it * 2
+      signals.period it * 2
     expect_equals 1
-      signals.signal_level it * 2 + 1
+      signals.level it * 2 + 1
     expect_equals periods[it * 2 + 1]
-      signals.signal_period it * 2 + 1
-
-  signals = rmt.Signals 32
-  Protocol.encode_write_signals_ signals 0xDA --from=16
-
-  // The first 16 signals are untouched.
-  16.repeat:
-    expect_equals 0
-      signals.signal_level it
-    expect_equals 0
-      signals.signal_period it
-
-  // The remaining 16 signals are encoded for writing 0xDA.
-  8.repeat:
-    i := 16 + it * 2
-    expect_equals 0
-      signals.signal_level i
-    expect_equals periods[it * 2]
-      signals.signal_period i
-    expect_equals 1
-      signals.signal_level i + 1
-    expect_equals periods[it * 2 + 1]
-      signals.signal_period i + 1
+      signals.period it * 2 + 1
