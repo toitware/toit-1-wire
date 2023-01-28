@@ -77,6 +77,7 @@ class TestProtocol implements Protocol:
   constructor .devices:
 
   is_closed/bool := false
+  is_powered/bool := false
   close: is_closed = true
 
   write_bits value/int count/int -> none:
@@ -95,23 +96,29 @@ class TestProtocol implements Protocol:
     throw "UNIMPLEMENTED"
 
   read_bit -> int:
+    expect_not is_powered
     bits := devices.map: it.read_bit
     bits.filter --in_place: it != null
     if bits.is_empty: return 1
     return bits.reduce: | a b | a & b
 
   read_bits count/int -> int:
+    expect_not is_powered
     result := 0
     count.repeat:
       result |= read_bit << it
     return result
 
   read count/int -> ByteArray:
+    expect_not is_powered
     throw "UNIMPLEMENTED"
 
   reset:
     devices.do: it.reset
     return not devices.is_empty
+
+  set_power power/bool -> none:
+    is_powered_ := power
 
 test_search:
   devices := [
