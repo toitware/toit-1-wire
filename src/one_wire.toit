@@ -88,7 +88,7 @@ class Bus:
     if multiple devices are addressed at the same time.
   */
   skip -> none:
-    if reset: throw "NO DEVICE"
+    if not reset: throw "NO DEVICE"
     write_byte COMMAND_ROM_SKIP_
 
   /**
@@ -552,7 +552,7 @@ class RmtProtocol implements Protocol:
   When open-drain is disabled, the pin can source up to 12mA.
   */
   set_power new_value/bool:
-    pin_.set_open_drain (not new_value)
+    // pin_.set_open_drain (not new_value)
 
   /**
   Decodes the given $signals to bytes.
