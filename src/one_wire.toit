@@ -42,11 +42,13 @@ class Bus:
   /**
   Constructs a 1-wire bus for the given $pin.
 
+  If $pull_up is set, then the pin's pull-up resistor is enabled.
+
   This constructor uses the default parameters for the protocol. Use
     $Bus.protocol if you need to customize the protocol.
   */
-  constructor pin/gpio.Pin:
-    protocol_ = Protocol pin
+  constructor pin/gpio.Pin --pull_up/bool=false:
+    protocol_ = Protocol pin --pull_up=pull_up
 
   /** Whether this bus is closed. */
   is_closed -> bool:
@@ -310,8 +312,16 @@ interface Protocol:
 
   See $RmtProtocol.constructor.
   */
-  constructor pin/gpio.Pin --in_buffer_size/int=1024 --in_channel_id/int?=null --out_channel_id/int?=null:
-    return RmtProtocol pin --in_buffer_size=in_buffer_size --in_channel_id=in_channel_id --out_channel_id=out_channel_id
+  constructor pin/gpio.Pin
+      --pull_up/bool
+      --in_buffer_size/int=1024
+      --in_channel_id/int?=null
+      --out_channel_id/int?=null:
+    return RmtProtocol pin
+        --in_buffer_size=in_buffer_size
+        --in_channel_id=in_channel_id
+        --out_channel_id=out_channel_id
+        --pull_up=pull_up
 
   /**
   Whether the protocol is closed.
@@ -426,6 +436,8 @@ class RmtProtocol implements Protocol:
 
   Configures the channels and the underlying pin for 1-wire.
 
+  If $pull_up is true then the pin's pull-up resistor is enabled.
+
   # Advanced
   The $in_buffer_size should be left unchanged unless the protocol requires
     many bytes to be read in sequence without allowing any pause.
@@ -435,7 +447,11 @@ class RmtProtocol implements Protocol:
     are used. This is almost always the correct choice. See $(rmt.Channel.constructor pin) for
     use cases when this is not the case.
   */
-  constructor pin/gpio.Pin --in_buffer_size/int=1024 --in_channel_id/int?=null --out_channel_id/int?=null:
+  constructor pin/gpio.Pin
+      --pull_up/bool
+      --in_buffer_size/int=1024
+      --in_channel_id/int?=null
+      --out_channel_id/int?=null:
     // The default is slightly above 1us. For 1-wire we prefer a more sensitive filter.
     filter_ticks_threshold := 30
 
@@ -448,7 +464,7 @@ class RmtProtocol implements Protocol:
         --buffer_size=in_buffer_size
         --idle_threshold=IDLE_THRESHOLD_
 
-    rmt.Channel.make_bidirectional --in=channel_in_ --out=channel_out_
+    rmt.Channel.make_bidirectional --in=channel_in_ --out=channel_out_ --pull_up=pull_up
 
   constructor.test_:
     channel_in_ = null
