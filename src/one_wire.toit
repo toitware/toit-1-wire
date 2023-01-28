@@ -556,7 +556,7 @@ class RmtProtocol implements Protocol:
   When open-drain is disabled, the pin can source up to 12mA.
   */
   set_power new_value/bool:
-    // pin_.set_open_drain (not new_value)
+    pin_.set_open_drain (not new_value)
 
   /**
   Decodes the given $signals to bytes.
