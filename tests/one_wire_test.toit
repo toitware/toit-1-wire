@@ -37,7 +37,7 @@ class TestDevice:
       if has_alarm:
         reset_search_
       else:
-        state = STATE_IDLE
+        state = STATE_SEARCH_DROP_OUT
     else:
       throw "UNIMPLEMENTED"
 
@@ -133,10 +133,24 @@ test_search:
   found := {}
   bus.do:
     found.add it
-
   expect_equals 3 found.size
-
   devices.do: expect (found.contains it.id)
+
+  // None of the devices have an alarm.
+  found = {}
+  bus.do --alarm_only:
+    found.add it
+  expect_equals 0 found.size
+
+  // Set an alarm on the second device.
+  devices[1].has_alarm = true
+
+  // Now search again.
+  found = {}
+  bus.do --alarm_only:
+    found.add it
+  expect_equals 1 found.size
+  expect (found.contains 0x5100_0000_FF2A_5A28)
 
   // Search for families.
   found = {}

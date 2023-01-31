@@ -276,7 +276,9 @@ class Bus:
           // The 'reset' indicated that a device was present, but nothing
           // responded. Similarly, we could be here, because there was a
           // collision, but then too, we should see a device.
-          throw "BUS ERROR"
+          if not alarm_only: throw "BUS ERROR"
+          // No device with an alarm.
+          return
 
         if id_bit == 0 and id_complement_bit == 0:
           // Collision.
