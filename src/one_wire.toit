@@ -37,23 +37,23 @@ class Bus:
   */
   protocol__/Protocol? := ?
 
-  protocol_ --power/bool [block] -> none:
+  protocol_ --power/bool -> Protocol:
     if not protocol__: throw "BUS CLOSED"
     protocol__.set_power power
-    block.call protocol__
+    return protocol__
 
   /**
   Constructs a 1-wire bus using the given $protocol.
   */
-  constructor.protocol protocol:
+  constructor.protocol protocol/Protocol:
     protocol__ = protocol
 
   /**
   Constructs a 1-wire bus for the given $pin.
 
   If $pull_up is set, then the pin's pull-up resistor is enabled. The
-    ESP32's internal pull-up is significantly higher (~50K Ohms) than
-    the 4.7K Ohms pull-up resistor that the 1-wire protocol requires.
+    ESP32's internal pull-up has significantly higher resistance (~50kΩ) than
+    the 4.7kΩ pull-up resistor that the 1-wire protocol requires.
     However, in many cases the internal pull-up still works fine and is
     sufficient.
 
@@ -115,8 +115,7 @@ class Bus:
     any operation is performed.
   */
   write_bit value/int --activate_power/bool=false -> none:
-    protocol_ --power=activate_power:
-      it.write_bits value 1
+    (protocol_ --power=activate_power).write_bits value 1
 
   /**
   Variant of $write_bit.
@@ -124,8 +123,7 @@ class Bus:
   Writes $count bits from $value on the bus.
   */
   write_bits value/int --count/int --activate_power/bool=false -> none:
-    protocol_ --power=activate_power:
-      it.write_bits value count
+    (protocol_ --power=activate_power).write_bits value count
 
   /**
   Variant of $write_bit.
@@ -133,8 +131,7 @@ class Bus:
   Writes a single byte $value to the pin.
   */
   write_byte value/int --activate_power/bool=false -> none:
-    protocol_ --power=activate_power:
-      it.write_byte value
+    (protocol_ --power=activate_power).write_byte value
 
   /**
   Variant of $write_bit.
@@ -143,16 +140,13 @@ class Bus:
   The $bytes are written individually, and not as a single bit sequence.
   */
   write bytes/ByteArray --activate_power/bool=false -> none:
-    protocol_ --power=activate_power:
-      it.write bytes
+    (protocol_ --power=activate_power).write bytes
 
   /**
   Reads a single bit from the pin.
   */
   read_bit -> int:
-    protocol_ --no-power:
-      return it.read_bits 1
-    unreachable
+    return (protocol_ --no-power).read_bits 1
 
   /**
   Reads $count bits from the pin.
@@ -161,17 +155,13 @@ class Bus:
     at most one byte can be read at a time.
   */
   read_bits count/int -> int:
-    protocol_ --no-power:
-      return it.read_bits count
-    unreachable
+    return (protocol_ --no-power).read_bits count
 
   /**
   Reads a single byte from the pin.
   */
   read_byte -> int:
-    protocol_ --no-power:
-      return it.read_byte
-    unreachable
+    return (protocol_ --no-power).read_byte
 
   /**
   Reads $count bytes from the pin.
@@ -179,17 +169,13 @@ class Bus:
   The reading operation assumes that the bytes are sent individually.
   */
   read count/int -> ByteArray:
-    protocol_ --no-power:
-      return it.read count
-    unreachable
+    return (protocol_ --no-power).read count
 
   /**
   Sends a reset and returns whether any device is present.
   */
   reset -> bool:
-    protocol_ --no-power:
-      return it.reset
-    unreachable
+    return (protocol_ --no-power).reset
 
   /**
   Searches for devices on the bus and calls the $block with
@@ -469,9 +455,9 @@ class RmtProtocol implements Protocol:
   // Constant A from the application note.
   static READ_LOW_ ::= 6
   // Constant E from the application note.
-  // The constant E in the application is 9us, but in many cases it might take
+  // The constant E in the application note is 9µs, but in many cases it might take
   // more time for the pull-up resistor to bring the line high again.
-  // We therefore wait for 9us + 5us before sampling.
+  // We therefore wait for 9µs + 5µs before sampling.
   static READ_HIGH_BEFORE_SAMPLE_ ::= 14
   // Constant F from the application note.
   static READ_HIGH_AFTER_SAMPLE_ ::= 55
