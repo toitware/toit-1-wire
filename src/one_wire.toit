@@ -332,6 +332,11 @@ class Bus:
     crc.add data
     return crc.get_as_int
 
+  static crc8 --bytes/ByteArray -> int:
+    crc := crc.Crc.little_endian 8 --polynomial=0x8C
+    crc.add bytes
+    return crc.get_as_int
+
 /**
 A 1-wire protocol.
 */
