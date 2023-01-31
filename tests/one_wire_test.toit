@@ -138,7 +138,7 @@ test_search:
 
   // None of the devices have an alarm.
   found = {}
-  bus.do --alarm_only=true:
+  bus.do --alarm_only:
     found.add it
   expect_equals 0 found.size
 
@@ -147,7 +147,7 @@ test_search:
 
   // Now search again.
   found = {}
-  bus.do --alarm_only=true:
+  bus.do --alarm_only:
     found.add it
   expect_equals 1 found.size
   expect (found.contains 0x5100_0000_FF2A_5A28)
