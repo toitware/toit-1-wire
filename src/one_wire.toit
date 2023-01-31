@@ -43,8 +43,8 @@ class Bus:
   Constructs a 1-wire bus for the given $pin.
 
   If $pull_up is set, then the pin's pull-up resistor is enabled. The
-    ESP32's internal pull-up is significantly higher (~50K Ohms) than
-    the 4.7K Ohms pull-up resistor that the 1-wire protocol requires.
+    ESP32's internal pull-up has significantly higher resistance (~50kΩ) than
+    the 4.7kΩ pull-up resistor that the 1-wire protocol requires.
     However, in many cases the internal pull-up still works fine and is
     sufficient.
 
