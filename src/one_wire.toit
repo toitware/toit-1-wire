@@ -448,9 +448,9 @@ class RmtProtocol implements Protocol:
   // Constant A from the application note.
   static READ_LOW_ ::= 6
   // Constant E from the application note.
-  // The constant E in the application is 9us, but in many cases it might take
+  // The constant E in the application note is 9µs, but in many cases it might take
   // more time for the pull-up resistor to bring the line high again.
-  // We therefore wait for 9us + 5us before sampling.
+  // We therefore wait for 9µs + 5µs before sampling.
   static READ_HIGH_BEFORE_SAMPLE_ ::= 14
   // Constant F from the application note.
   static READ_HIGH_AFTER_SAMPLE_ ::= 55
