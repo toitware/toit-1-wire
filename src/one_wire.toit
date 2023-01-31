@@ -31,13 +31,22 @@ class Bus:
   */
   static SKIP_FAMILY ::= Object
 
-  protocol_/Protocol? := ?
+  /**
+  The protocol.
+  Use the $protocol_ accessor to use the protocol.
+  */
+  protocol__/Protocol? := ?
+
+  protocol_ --power/bool -> Protocol:
+    if not protocol__: throw "BUS CLOSED"
+    protocol__.set_power power
+    return protocol__
 
   /**
   Constructs a 1-wire bus using the given $protocol.
   */
-  constructor.protocol protocol:
-    protocol_ = protocol
+  constructor.protocol protocol/Protocol:
+    protocol__ = protocol
 
   /**
   Constructs a 1-wire bus for the given $pin.
@@ -52,19 +61,19 @@ class Bus:
     $Bus.protocol if you need to customize the protocol.
   */
   constructor pin/gpio.Pin --pull_up/bool=false:
-    protocol_ = Protocol pin --pull_up=pull_up
+    protocol__ = Protocol pin --pull_up=pull_up
 
   /** Whether this bus is closed. */
   is_closed -> bool:
-    return protocol_ == null
+    return protocol__ == null
 
   /**
   Closes this bus and releases the underlying resources.
   */
   close:
-    if protocol_:
-      protocol_.close
-      protocol_ = null
+    if protocol__:
+      protocol__.close
+      protocol__ = null
 
   /**
   Selects the device with the given $device_id.
@@ -72,9 +81,9 @@ class Bus:
   The $device_id is a byte array of length 8.
   */
   select device_id/int -> none:
-    if not protocol_.reset: throw "NO DEVICE"
-    protocol_.write_byte COMMAND_ROM_MATCH_
-    protocol_.write_bits device_id 64
+    if not reset: throw "NO DEVICE"
+    write_byte COMMAND_ROM_MATCH_
+    write_bits device_id --count=64
 
   /**
   Skips the device selection step.
@@ -83,8 +92,8 @@ class Bus:
     if multiple devices are addressed at the same time.
   */
   skip -> none:
-    if not protocol_.reset: throw "NO DEVICE"
-    protocol_.write_byte COMMAND_ROM_SKIP_
+    if not reset: throw "NO DEVICE"
+    write_byte COMMAND_ROM_SKIP_
 
   /**
   Reads the device id of the single device on the bus.
@@ -93,32 +102,51 @@ class Bus:
     the bit-and of all device ids, and thus unusable.
   */
   read_device_id -> int:
-    if not protocol_.reset: throw "NO DEVICE"
-    protocol_.write_byte COMMAND_ROM_READ_
-    return protocol_.read_bits 64
-
-  write_bit value/int -> none:
-    protocol_.write_bits value 1
+    if not reset: throw "NO DEVICE"
+    write_byte COMMAND_ROM_READ_
+    return read_bits 64
 
   /**
-  Writes $count bits from $value to the pin.
+  Writes a single bit $value on the bus.
+  If $activate_power is true, disables the pin's open-drain so that
+    the pin can be used as a power source. An ESP32 can source up to 12 mA
+    in this configuration.
+  The pin is automatically set back to open-drain mode the next time
+    any operation is performed.
   */
-  write_bits value/int --count/int -> none:
-    protocol_.write_bits value count
+  write_bit value/int --activate_power/bool=false -> none:
+    (protocol_ --power=activate_power).write_bits value 1
 
   /**
+  Variant of $write_bit.
+
+  Writes $count bits from $value on the bus.
+  */
+  write_bits value/int --count/int --activate_power/bool=false -> none:
+    (protocol_ --power=activate_power).write_bits value count
+
+  /**
+  Variant of $write_bit.
+
   Writes a single byte $value to the pin.
   */
-  write_byte value/int -> none:
-    protocol_.write_byte value
+  write_byte value/int --activate_power/bool=false -> none:
+    (protocol_ --power=activate_power).write_byte value
 
   /**
-  Writes all given $bytes to the pin.
+  Variant of $write_bit.
 
+  Writes all given $bytes to the pin.
   The $bytes are written individually, and not as a single bit sequence.
   */
-  write bytes/ByteArray -> none:
-    protocol_.write bytes
+  write bytes/ByteArray --activate_power/bool=false -> none:
+    (protocol_ --power=activate_power).write bytes
+
+  /**
+  Reads a single bit from the pin.
+  */
+  read_bit -> int:
+    return (protocol_ --no-power).read_bits 1
 
   /**
   Reads $count bits from the pin.
@@ -127,13 +155,13 @@ class Bus:
     at most one byte can be read at a time.
   */
   read_bits count/int -> int:
-    return protocol_.read_bits count
+    return (protocol_ --no-power).read_bits count
 
   /**
   Reads a single byte from the pin.
   */
   read_byte -> int:
-    return protocol_.read_byte
+    return (protocol_ --no-power).read_byte
 
   /**
   Reads $count bytes from the pin.
@@ -141,13 +169,13 @@ class Bus:
   The reading operation assumes that the bytes are sent individually.
   */
   read count/int -> ByteArray:
-    return protocol_.read count
+    return (protocol_ --no-power).read count
 
   /**
   Sends a reset and returns whether any device is present.
   */
   reset -> bool:
-    return protocol_.reset
+    return (protocol_ --no-power).reset
 
   /**
   Searches for devices on the bus and calls the $block with
@@ -230,9 +258,9 @@ class Bus:
     previous_last_unexplored_branch := fixed_bits
 
     while true:
-      if not protocol_.reset: return
+      if not reset: return
 
-      protocol_.write_byte (alarm_only ? COMMAND_ROM_SEARCH_ALARM_ : COMMAND_ROM_SEARCH_)
+      write_byte (alarm_only ? COMMAND_ROM_SEARCH_ALARM_ : COMMAND_ROM_SEARCH_)
 
       for id_bit_position := 0; id_bit_position < 64; id_bit_position++:
         // Devices are supposed to reply to the search command (and
@@ -240,8 +268,8 @@ class Bus:
         // Since the one-wire bus is open-drain, 0 values win, and we can
         // detect collisions by reading to 0 bits.
 
-        id_bit := protocol_.read_bits 1
-        id_complement_bit := protocol_.read_bits 1
+        id_bit := read_bits 1
+        id_complement_bit := read_bits 1
 
         if id_bit == 1 and id_complement_bit == 1:
           // No response.
@@ -275,7 +303,7 @@ class Bus:
         // Notify the devices of the choice.
         // All devices that have an id with a different bit are silent
         // from now on.
-        protocol_.write_bits id_bit 1
+        write_bit id_bit
 
       crc := crc8 id
       if id >>> 56 != crc:
@@ -336,6 +364,17 @@ interface Protocol:
   Closes the protocol and releases the underlying resources.
   */
   close -> none
+
+  /**
+  Activates or deactivates power delivery to the bus.
+
+  This is used to power devices that require more power than the bus can
+    provide with just a pull-up resistor.
+
+  When enabled, the open-drain is disabled, and devices on the bus can
+    use up to 12mA of current delivered by the pin.
+  */
+  set_power new_value/bool -> none
 
   /**
   Writes $count bits from $value to the pin.
@@ -432,6 +471,7 @@ class RmtProtocol implements Protocol:
 
   static RESET_RESPONSE_TIMEOUT_MS_ ::= 500
 
+  pin_ /gpio.Pin
   channel_in_  /rmt.Channel? := ?
   channel_out_ /rmt.Channel? := ?
 
@@ -456,6 +496,8 @@ class RmtProtocol implements Protocol:
       --in_buffer_size/int=1024
       --in_channel_id/int?=null
       --out_channel_id/int?=null:
+    pin_ = pin
+
     // The default is slightly above 1us. For 1-wire we prefer a more sensitive filter.
     filter_ticks_threshold := 30
 
@@ -471,6 +513,7 @@ class RmtProtocol implements Protocol:
     rmt.Channel.make_bidirectional --in=channel_in_ --out=channel_out_ --pull_up=pull_up
 
   constructor.test_:
+    pin_ = gpio.VirtualPin:: null
     channel_in_ = null
     channel_out_ = null
 
@@ -489,6 +532,14 @@ class RmtProtocol implements Protocol:
     channel_out_.close
     channel_in_ = null
     channel_out_ = null
+
+  /**
+  Enables or disables open-drain.
+
+  When open-drain is disabled, the pin can source up to 12mA.
+  */
+  set_power new_value/bool:
+    pin_.set_open_drain (not new_value)
 
   /**
   Decodes the given $signals to bytes.
