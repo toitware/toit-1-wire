@@ -618,7 +618,6 @@ class RmtProtocol implements Protocol:
 
   static encode_write_signals_ signals/rmt.Signals bits/int --from/int=0 --count/int -> none:
     write_signal_count := count * SIGNALS_PER_BIT_
-    assert: count <= 8
     assert: 0 <= from < signals.size
     assert: from + write_signal_count < signals.size
     count.repeat:
