@@ -1,3 +1,4 @@
 name: one_wire
+description: Implementation of the 1-Wire protocol.
 environment:
   sdk: ^2.0.0-alpha.49
