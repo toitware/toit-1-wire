@@ -2,9 +2,10 @@
 // Use of this source code is governed by an MIT-style license that can be
 // found in the LICENSE file.
 
-import rmt
-import gpio
 import crypto.crc
+import gpio
+import system show BITS-PER-BYTE
+import rmt
 
 /**
 Support for 1-wire protocol.
