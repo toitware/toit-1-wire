@@ -4,7 +4,7 @@
 
 cmake_minimum_required(VERSION 3.23)
 
-project(one_wire)
+project(one_wire NONE)
 
 enable_testing()
 add_subdirectory(tests)
