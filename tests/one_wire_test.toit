@@ -2,125 +2,125 @@
 // Use of this source code is governed by a Zero-Clause BSD license that can
 // be found in the TESTS_LICENSE file.
 
-import one_wire show *
+import one-wire show *
 import expect show *
 import monitor
 
 main:
-  test_search
-  test_ping
-  test_id_crc
+  test-search
+  test-ping
+  test-id-crc
 
 class TestDevice:
-  static STATE_IDLE ::= 0
-  static STATE_RESET ::= 1
-  static STATE_SEARCH_BIT ::= 2
-  static STATE_SEARCH_COMPLEMENT ::= 3
-  static STATE_SEARCH_WAIT_FOR_DECISION ::= 4
-  static STATE_SEARCH_DROP_OUT ::= 5
+  static STATE-IDLE ::= 0
+  static STATE-RESET ::= 1
+  static STATE-SEARCH-BIT ::= 2
+  static STATE-SEARCH-COMPLEMENT ::= 3
+  static STATE-SEARCH-WAIT-FOR-DECISION ::= 4
+  static STATE-SEARCH-DROP-OUT ::= 5
 
-  static COMMAND_SEARCH ::= 0xF0
-  static COMMAND_SEARCH_ALARM ::= 0xEC
+  static COMMAND-SEARCH ::= 0xF0
+  static COMMAND-SEARCH-ALARM ::= 0xEC
 
   id/int
-  state/int := STATE_IDLE
-  has_alarm/bool := false
-  search_bit/int := -1
+  state/int := STATE-IDLE
+  has-alarm/bool := false
+  search-bit/int := -1
 
   constructor .id:
 
-  write_byte byte/int:
-    if state != STATE_RESET: throw "UNIMPLEMENTED"
-    if byte == COMMAND_SEARCH:
-      reset_search_
-    else if byte == COMMAND_SEARCH_ALARM:
-      if has_alarm:
-        reset_search_
+  write-byte byte/int:
+    if state != STATE-RESET: throw "UNIMPLEMENTED"
+    if byte == COMMAND-SEARCH:
+      reset-search_
+    else if byte == COMMAND-SEARCH-ALARM:
+      if has-alarm:
+        reset-search_
       else:
-        state = STATE_SEARCH_DROP_OUT
+        state = STATE-SEARCH-DROP-OUT
     else:
       throw "UNIMPLEMENTED"
 
-  write_bit bit/int:
-    if state == STATE_SEARCH_DROP_OUT: return
-    if state != STATE_SEARCH_WAIT_FOR_DECISION:
+  write-bit bit/int:
+    if state == STATE-SEARCH-DROP-OUT: return
+    if state != STATE-SEARCH-WAIT-FOR-DECISION:
       throw "UNIMPLEMENTED"
-    my_bit := (id >> search_bit) & 1
-    if bit != my_bit:
-      state = STATE_SEARCH_DROP_OUT
+    my-bit := (id >> search-bit) & 1
+    if bit != my-bit:
+      state = STATE-SEARCH-DROP-OUT
       return
-    search_bit++
-    state = STATE_SEARCH_BIT
+    search-bit++
+    state = STATE-SEARCH-BIT
 
-  read_bit -> int?:
-    if state == STATE_SEARCH_DROP_OUT: return null
-    if state == STATE_SEARCH_BIT:
-      state = STATE_SEARCH_COMPLEMENT
-      assert: search_bit >= 0
-      return (id >> search_bit) & 1
-    if state == STATE_SEARCH_COMPLEMENT:
-      assert: search_bit >= 0
-      state = STATE_SEARCH_WAIT_FOR_DECISION
-      return ((id >> search_bit) & 1) ^ 1
+  read-bit -> int?:
+    if state == STATE-SEARCH-DROP-OUT: return null
+    if state == STATE-SEARCH-BIT:
+      state = STATE-SEARCH-COMPLEMENT
+      assert: search-bit >= 0
+      return (id >> search-bit) & 1
+    if state == STATE-SEARCH-COMPLEMENT:
+      assert: search-bit >= 0
+      state = STATE-SEARCH-WAIT-FOR-DECISION
+      return ((id >> search-bit) & 1) ^ 1
     throw "UNIMPLEMENTED"
 
-  reset_search_:
-    state = STATE_SEARCH_BIT
-    search_bit = 0
+  reset-search_:
+    state = STATE-SEARCH-BIT
+    search-bit = 0
 
   reset:
-    state = STATE_RESET
+    state = STATE-RESET
 
 class TestProtocol implements Protocol:
   devices/List
 
   constructor .devices:
 
-  is_closed/bool := false
-  is_powered/bool := false
-  close: is_closed = true
+  is-closed/bool := false
+  is-powered/bool := false
+  close: is-closed = true
 
-  write_bits value/int count/int -> none:
+  write-bits value/int count/int -> none:
     count.repeat:
       bit := value & 1
-      devices.do: it.write_bit bit
+      devices.do: it.write-bit bit
       value >>= 1
 
-  write_byte byte/int -> none:
-    devices.do: it.write_byte byte
+  write-byte byte/int -> none:
+    devices.do: it.write-byte byte
 
   write bytes/ByteArray -> none:
-    bytes.do: write_byte it
+    bytes.do: write-byte it
 
-  read_byte -> int:
+  read-byte -> int:
     throw "UNIMPLEMENTED"
 
-  read_bit -> int:
-    expect_not is_powered
-    bits := devices.map: it.read_bit
-    bits.filter --in_place: it != null
-    if bits.is_empty: return 1
+  read-bit -> int:
+    expect-not is-powered
+    bits := devices.map: it.read-bit
+    bits.filter --in-place: it != null
+    if bits.is-empty: return 1
     return bits.reduce: | a b | a & b
 
-  read_bits count/int -> int:
-    expect_not is_powered
+  read-bits count/int -> int:
+    expect-not is-powered
     result := 0
     count.repeat:
-      result |= read_bit << it
+      result |= read-bit << it
     return result
 
   read count/int -> ByteArray:
-    expect_not is_powered
+    expect-not is-powered
     throw "UNIMPLEMENTED"
 
   reset:
     devices.do: it.reset
-    return not devices.is_empty
+    return not devices.is-empty
 
-  set_power power/bool -> none:
-    is_powered_ := power
+  set-power power/bool -> none:
+    is-powered_ := power
 
-test_search:
+test-search:
   devices := [
     TestDevice 0x3D00_0000_0000_0001,
     TestDevice 0x5100_0000_FF2A_5A28,
@@ -133,23 +133,23 @@ test_search:
   found := {}
   bus.do:
     found.add it
-  expect_equals 3 found.size
+  expect-equals 3 found.size
   devices.do: expect (found.contains it.id)
 
   // None of the devices have an alarm.
   found = {}
-  bus.do --alarm_only:
+  bus.do --alarm-only:
     found.add it
-  expect_equals 0 found.size
+  expect-equals 0 found.size
 
   // Set an alarm on the second device.
-  devices[1].has_alarm = true
+  devices[1].has-alarm = true
 
   // Now search again.
   found = {}
-  bus.do --alarm_only:
+  bus.do --alarm-only:
     found.add it
-  expect_equals 1 found.size
+  expect-equals 1 found.size
   expect (found.contains 0x5100_0000_FF2A_5A28)
 
   // Search for families.
@@ -157,7 +157,7 @@ test_search:
   bus.do --family=0x01:
     found.add it
 
-  expect_equals 1 found.size
+  expect-equals 1 found.size
   expect (found.contains 0x3D00_0000_0000_0001)
 
   // Search for 0x28 family.
@@ -165,7 +165,7 @@ test_search:
   bus.do --family=0x28:
     found.add it
 
-  expect_equals 2 found.size
+  expect-equals 2 found.size
   expect (found.contains 0x5100_0000_FF2A_5A28)
   expect (found.contains 0xFA00_0001_FF2A_5A28)
 
@@ -174,17 +174,17 @@ test_search:
 
   bus.do:
     found.add it
-    if it & 0xFF == 0x28: continue.do Bus.SKIP_FAMILY
+    if it & 0xFF == 0x28: continue.do Bus.SKIP-FAMILY
 
   // Because we skipped the remaining entries of the 0x28 family, we should
   // only find the first entry.
-  expect_equals 2 found.size
+  expect-equals 2 found.size
   expect (found.contains 0x3D00_0000_0000_0001)
   // The one-wire bus goes from the LSB to the MSB, trying '0'
   // bits first.
   expect (found.contains 0x5100_0000_FF2A_5A28)
 
-test_ping:
+test-ping:
   devices := [
     // TODO(florian): fix CRC of first and third device.
     TestDevice 0x3D00_0000_0000_0001,
@@ -197,11 +197,11 @@ test_ping:
   devices.do:
     expect (bus.ping it.id)
 
-  expect_not (bus.ping 0x3D00_0000_0000_0000)
-  expect_not (bus.ping 0x5100_0000_FF2A_5A29)
-  expect_not (bus.ping 0xFA00_0001_FF2A_5A29)
+  expect-not (bus.ping 0x3D00_0000_0000_0000)
+  expect-not (bus.ping 0x5100_0000_FF2A_5A29)
+  expect-not (bus.ping 0xFA00_0001_FF2A_5A29)
 
-test_id_crc:
+test-id-crc:
   ids := []
   // Id from https://www.analog.com/en/technical-articles/understanding-and-using-cyclic-redundancy-checks-with-maxim-1wire-and-ibutton-products.html
   ids.add 0xA200_0000_01B8_1C02
@@ -216,4 +216,4 @@ test_id_crc:
 
   ids.do:
     crc := Bus.crc8 it
-    expect_equals (it >>> 56) crc
+    expect-equals (it >>> 56) crc
