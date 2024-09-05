@@ -523,6 +523,11 @@ class RmtProtocol implements Protocol:
 
     rmt.Channel.make-bidirectional --in=channel-in_ --out=channel-out_ --pull-up=pull-up
 
+    // All the channel setup will shortly pull the line low. This
+    // can confuse the devices on the bus.
+    // Do a reset to ensure that the bus is in a better state.
+    reset
+
   constructor.test_:
     pin_ = gpio.VirtualPin:: null
     channel-in_ = null
