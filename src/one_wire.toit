@@ -191,16 +191,10 @@ class Bus:
   do --alarm-only/bool=false --family/int?=null [block] -> none:
     if family:
       // Start the search with the family id.
-      // By setting the previous_last_unexplored_branch to 64 (any higher value
-      // would work too), we are letting
-      // the search always take the '0' branch for the non-family bits.
-      // Note that the search overwrites the id for non-collision bits.
-      // As a consequence, the search will find the first device with an
-      // id that is greater or equal to the family id.
       search_
           --alarm-only=alarm-only
           --start-id=family
-          --fixed-bits=8
+          --fixed-bits=8  // Fix the family bits.
           : | id |
             if id & 0xFF != family: return
             block.call id
@@ -226,7 +220,7 @@ class Bus:
     // The devices respond with the least-significant bit of their ID and
     // the complement of that bit. This allows the controller to detect collisions,
     // since both bits are 0 in that case (open-drain).
-    // The controller than chooses the path to take by emitting the next bit.
+    // The controller then chooses the path to take by emitting the next bit.
     // If there was no collision, that's the one it received. Otherwise it chooses
     // one of the two possibilities. At the same time, it remembers the bit-position
     // at which it had to make a choice.
@@ -245,18 +239,16 @@ class Bus:
     // Keeps track of the last bit position where we branched and still have to
     // take the second branch.
     // By construction the path we still have to take is the '1' path.
-    // In the literare this variable is usually called 'last_zero'.
-    last-unexplored-branch := -1
-    // Keeps track of the last bit position where we branched and still have to
-    // take the second branch.
-    // This variable (contrary to 'last_branch') is only used for the family bits
-    // (the first 8 bits).
-    last-unexplored-family-branch := -1
-    // Keeps track of the last branching point of a previous iteration.
-    // We are going to take the same path up to this point.
-    // In the literature this variable is usually called 'last_discrepancy'.
-    // This variable is updated once all 64 bits of a device id have been found.
-    previous-last-unexplored-branch := fixed-bits
+    last-zero := -1
+    // Same as last-zero, but only for the family bits, allowing to skip
+    // a complete family branch.
+    // In the literature, this is called 'last-family-discrepancy'.
+    last-family-zero := -1
+    // Keeps track of where to start the next iteration of the search.
+    // This variable is updated once all 64 bits of a device id have been
+    // constructed. It is typically set to `last-zero` (which might be lower than
+    // the current value of the variable.
+    last-discrepancy := -1
 
     while true:
       if not reset: return
@@ -281,23 +273,33 @@ class Bus:
           // No device with an alarm.
           return
 
+        if id-bit != id-complement-bit:
+          // No collision.
+          if id-bit-position < fixed-bits:
+            if id-bit != ((id >> id-bit-position) & 1):
+              // No device responds to the fixed bits.
+              return
+
         if id-bit == 0 and id-complement-bit == 0:
           // Collision.
-          if id-bit-position < previous-last-unexplored-branch:
+          if id-bit-position < fixed-bits:
+            // The fixed bits steer the search.
+            id-bit  = ((id >> id-bit-position) & 1)
+          else if id-bit-position < last-discrepancy:
             // Take the same path as the last time.
             id-bit = (id >> id-bit-position) & 1
-          else if id-bit-position == previous-last-unexplored-branch:
+          else if id-bit-position == last-discrepancy:
+            assert: (id >> id-bit-position) & 1 == 0
             // We took '0' the first time. Now we take '1'.
             id-bit = 1
           else:
             // New discrepancy. Take '0' first.
             id-bit = 0
 
-          if id-bit == 0:
-            // Remember where we have an unexplored branch.
-            last-unexplored-branch = id-bit-position
+          if id-bit == 0 and id-bit-position >= fixed-bits:
+            last-zero = id-bit-position
             if id-bit-position < 8:
-              last-unexplored-family-branch = last-unexplored-branch
+              last-family-zero = id-bit-position
 
         // Update the id with the chosen bit.
         id &= ~(1 << id-bit-position)
@@ -315,16 +317,17 @@ class Bus:
       // We have found a device.
       block-result := block.call id
 
+      if block-result == SKIP-FAMILY:
+        last-zero = last-family-zero
+
+      last-discrepancy = last-zero
+
       // Continue with the next iteration, unless there is no branching
       // point left.
-      if last-unexplored-branch == -1: return
+      if last-zero == -1: return
 
-      if block-result == SKIP-FAMILY:
-        previous-last-unexplored-branch = last-unexplored-family-branch
-      else:
-        previous-last-unexplored-branch = last-unexplored-branch
-      last-unexplored-branch = -1
-      last-unexplored-family-branch = -1
+      last-zero = -1
+      last-family-zero = -1
 
   static crc8 id/int:
     crc := crc.Crc.little-endian 8 --polynomial=0x8C

@@ -7,6 +7,7 @@ import expect show *
 import monitor
 
 main:
+  test-search-2
   test-search
   test-ping
   test-id-crc
@@ -184,9 +185,61 @@ test-search:
   // bits first.
   expect (found.contains 0x5100_0000_FF2A_5A28)
 
+test-search-2:
+  devices := [
+    TestDevice 0xB33C_E1E3_81BD_DE28,
+    TestDevice 0xC33C_E1E3_8168_F328,
+  ]
+  protocol := TestProtocol devices
+
+  bus := Bus.protocol protocol
+
+  found := {}
+  bus.do:
+    found.add it
+  expect-equals 2 found.size
+  devices.do: expect (found.contains it.id)
+
+  // None of the devices have an alarm.
+  found = {}
+  bus.do --alarm-only:
+    found.add it
+  expect-equals 0 found.size
+
+  // Set an alarm on the second device.
+  devices[1].has-alarm = true
+
+  // Now search again.
+  found = {}
+  bus.do --alarm-only:
+    found.add it
+  expect-equals 1 found.size
+  expect (found.contains 0xC33C_E1E3_8168_F328)
+
+  // Search for 0x28 family.
+  found = {}
+  bus.do --family=0x28:
+    found.add it
+
+  expect-equals 2 found.size
+  devices.do: expect (found.contains it.id)
+
+  // Skip family.
+  found = {}
+
+  bus.do:
+    found.add it
+    if it & 0xFF == 0x28: continue.do Bus.SKIP-FAMILY
+
+  // Because we skipped the remaining entries of the 0x28 family, we should
+  // only find the first entry.
+  expect-equals 1 found.size
+  // The one-wire bus goes from the LSB to the MSB, trying '0'
+  // bits first.
+  expect (found.contains 0xB33C_E1E3_81BD_DE28)
+
 test-ping:
   devices := [
-    // TODO(florian): fix CRC of first and third device.
     TestDevice 0x3D00_0000_0000_0001,
     TestDevice 0x5100_0000_FF2A_5A28,
     TestDevice 0xFA00_0001_FF2A_5A28,
@@ -209,6 +262,9 @@ test-id-crc:
   ids.add 0xD7AA_13C0_2916_9085
   ids.add 0xA600_0801_9470_1310
   ids.add 0x2E00_0002_8FAD_4928
+  // Ids we found in our sensors:
+  ids.add 0xB33C_E1E3_81BD_DE28
+  ids.add 0xC33C_E1E3_8168_F328
   // The ids we use in the rest of the tests:
   ids.add 0x3D00_0000_0000_0001
   ids.add 0x5100_0000_FF2A_5A28
