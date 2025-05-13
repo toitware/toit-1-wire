@@ -7,8 +7,8 @@ import expect show *
 import monitor
 
 main:
-  test-search-2
   test-search
+  test-search-2
   test-ping
   test-id-crc
 
