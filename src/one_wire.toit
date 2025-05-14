@@ -347,6 +347,29 @@ interface Protocol:
   /** Exception thrown when the signal couldn't be decoded. */
   static INVALID-SIGNAL ::= "INVALID_SIGNAL"
 
+  /** Deprecated. Use `--memory-blocks` instead. Channel ids are unsupported. */
+  constructor pin/gpio.Pin
+      --pull-up/bool
+      --in-buffer-size/int
+      --in-channel-id/int?=null
+      --out-channel-id/int?=null:
+    return RmtProtocol pin --pull-up=pull-up
+        --memory-blocks=in-buffer-size / 256
+
+
+  /** Deprecated. Channel ids are unsupported. */
+  constructor pin/gpio.Pin
+      --pull-up/bool
+      --in-channel-id/int
+      --out-channel-id/int?=null:
+    return RmtProtocol pin --pull-up=pull-up
+
+  /** Deprecated. Channel ids are unsupported. */
+  constructor pin/gpio.Pin
+      --pull-up/bool
+      --out-channel-id/int:
+    return RmtProtocol pin --pull-up=pull-up
+
   /**
   Constructs a new RMT-based protocol.
 
@@ -354,14 +377,8 @@ interface Protocol:
   */
   constructor pin/gpio.Pin
       --pull-up/bool
-      --in-buffer-size/int=1024
-      --in-channel-id/int?=null
-      --out-channel-id/int?=null:
-    return RmtProtocol pin
-        --in-buffer-size=in-buffer-size
-        --in-channel-id=in-channel-id
-        --out-channel-id=out-channel-id
-        --pull-up=pull-up
+      --memory-blocks/int=4:
+    return RmtProtocol pin --pull-up=pull-up --memory-blocks=memory-blocks
 
   /**
   Whether the protocol is closed.
@@ -435,6 +452,8 @@ class RmtProtocol implements Protocol:
 
   The timings are giving as constants A, B, ... which have been incorporated into
     constant names below.
+
+  All timings are in microseconds.
   */
 
   // Constant H from the application note.
@@ -483,8 +502,31 @@ class RmtProtocol implements Protocol:
   static RESET-RESPONSE-TIMEOUT-MS_ ::= 500
 
   pin_ /gpio.Pin
-  channel-in_  /rmt.Channel? := ?
-  channel-out_ /rmt.Channel? := ?
+  channel-in_  /rmt.In? := ?
+  channel-out_ /rmt.Out? := ?
+
+  /** Deprecated. Use `--memory-blocks` instead. Channel ids are unsupported. */
+  constructor pin/gpio.Pin
+      --pull-up/bool
+      --in-buffer-size/int
+      --in-channel-id/int?=null
+      --out-channel-id/int?=null:
+    return RmtProtocol pin --pull-up=pull-up
+        --memory-blocks=in-buffer-size / 256
+
+
+  /** Deprecated. Channel ids are unsupported. */
+  constructor pin/gpio.Pin
+      --pull-up/bool
+      --in-channel-id/int
+      --out-channel-id/int?=null:
+    return RmtProtocol pin --pull-up=pull-up
+
+  /** Deprecated. Channel ids are unsupported. */
+  constructor pin/gpio.Pin
+      --pull-up/bool
+      --out-channel-id/int:
+    return RmtProtocol pin --pull-up=pull-up
 
   /**
   Constructs a 1-Wire protocol using RMT channels.
@@ -494,34 +536,20 @@ class RmtProtocol implements Protocol:
   If $pull-up is true then the pin's pull-up resistor is enabled.
 
   # Advanced
-  The $in-buffer-size should be left unchanged unless the protocol requires
+  The $memory-blocks should be left unchanged unless the protocol requires
     many bytes to be read in sequence without allowing any pause.
   Generally, it is recommended to just split read operations into managable chunks.
-
-  If no $in-channel-id and $out-channel-id is provided then the first free RMT channels
-    are used. This is almost always the correct choice. See $(rmt.Channel.constructor pin) for
-    use cases when this is not the case.
   */
-  constructor pin/gpio.Pin
-      --pull-up/bool
-      --in-buffer-size/int=1024
-      --in-channel-id/int?=null
-      --out-channel-id/int?=null:
+  constructor pin/gpio.Pin --pull-up/bool --memory-blocks/int=4:
     pin_ = pin
 
     // The default is slightly above 1us. For 1-wire we prefer a more sensitive filter.
     filter-ticks-threshold := 30
 
-    // Output channel must be configured before the input channel for
-    // `make_bidirectional` to work
-    channel-out_ = rmt.Channel --output pin --channel-id=out-channel-id
-        --idle-level=1
-    channel-in_ = rmt.Channel --input pin --channel-id=in-channel-id
-        --filter-ticks-threshold=filter-ticks-threshold
-        --buffer-size=in-buffer-size
-        --idle-threshold=IDLE-THRESHOLD_
-
-    rmt.Channel.make-bidirectional --in=channel-in_ --out=channel-out_ --pull-up=pull-up
+    // Input channel must be configured before the output channel to make
+    // the '--open-drain' work.
+    channel-in_ = rmt.In pin --memory-blocks=memory-blocks --resolution=1_000_000
+    channel-out_ = rmt.Out pin --resolution=1_000_000
 
     // All the channel setup will shortly pull the line low. This
     // can confuse the devices on the bus.
@@ -586,7 +614,7 @@ class RmtProtocol implements Protocol:
   */
   write-bits value/int count/int -> none:
     signals := encode-write-signals_ value --count=count
-    channel-out_.write signals
+    channel-out_.write signals --done-level=1
 
   /**
   Writes a single byte $value to the pin.
@@ -646,11 +674,14 @@ class RmtProtocol implements Protocol:
   read-bits count/int -> int:
     if not 0 <= count <= 64: throw "INVALID_ARGUMENT"
     read-signals := encode-read-signals_ --bit-count=count
-    channel-in_.start-reading
-    channel-out_.write read-signals
-    received-signals := channel-in_.read
-    channel-in_.stop-reading
-    return decode-signals-to-bits_ received-signals --bit-count=count
+    try:
+      channel-in_.start-reading --min-ns=250 --max-ns=(IDLE-THRESHOLD_ * 1000)
+      channel-out_.write read-signals --done-level=1
+      received-signals := channel-in_.wait-for-data
+      return decode-signals-to-bits_ received-signals --bit-count=count
+    finally:
+      if channel-in_.is-reading:
+        channel-in_.reset
 
   /**
   Reads a single byte from the pin.
@@ -692,8 +723,6 @@ class RmtProtocol implements Protocol:
   Sends a reset to the receiver and reads whether a receiver is present.
   */
   reset -> bool:
-    old-threshold := channel-in_.idle-threshold
-    channel-in_.idle-threshold = RESET-IDLE-THRESHOLD_
     periods := [
       RESET-LOW_,
       RESET-HIGH_,
@@ -701,11 +730,11 @@ class RmtProtocol implements Protocol:
     try:
       signals := rmt.Signals.alternating --first-level=0 periods
 
-      channel-in_.start-reading
-      channel-out_.write signals
+      channel-in_.start-reading --min-ns=250 --max-ns=(RESET-IDLE-THRESHOLD_ * 1000)
+      channel-out_.write signals --done-level=1
       catch:
         with-timeout --ms=RESET-RESPONSE-TIMEOUT-MS_:
-          received-signals := channel-in_.read
+          received-signals := channel-in_.wait-for-data
 
           return received-signals.size >= 3 and
             // We observe the first low pulse that we sent.
@@ -719,4 +748,5 @@ class RmtProtocol implements Protocol:
       // If we are here, we had a timeout.
       return false
     finally:
-      channel-in_.idle-threshold = old-threshold
+      if channel-in_.is-reading:
+        channel-in_.reset
