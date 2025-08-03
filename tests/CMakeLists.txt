@@ -5,14 +5,13 @@
 file(GLOB TESTS RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} "*_test.toit" "*-test.toit")
 
 # Add windows exe extension.
-set(TOIT_EXEC "toit.run${CMAKE_EXECUTABLE_SUFFIX}" CACHE FILEPATH "The executable used to run the tests")
-set(TPKG_EXEC "toit.pkg${CMAKE_EXECUTABLE_SUFFIX}" CACHE FILEPATH "The executable used to install the packages")
+set(TOIT "toit${CMAKE_EXECUTABLE_SUFFIX}" CACHE FILEPATH "The executable used to run the tests")
 set(TEST_TIMEOUT 40 CACHE STRING "The maximal amount of time each test is allowed to run")
 set(SLOW_TEST_TIMEOUT 200 CACHE STRING "The maximal amount of time each slow test is allowed to run")
 
 add_custom_target(
   "install-pkgs"
-  COMMAND "${TPKG_EXEC}" install
+  COMMAND "${TOIT}" pkg install
   WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
 )
 
@@ -28,7 +27,7 @@ add_custom_target(
 foreach(file ${TESTS})
   add_test(
     NAME ${file}
-    COMMAND "${TOIT_EXEC}" "${file}"
+    COMMAND "${TOIT}" "${file}"
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
     )
   set_tests_properties(${file} PROPERTIES TIMEOUT ${TEST_TIMEOUT})
