@@ -344,7 +344,7 @@ class Bus:
     crc.add bytes
     return crc.get-as-int
 
-default-rmt-channels_:
+default-rmt-channel-count_ -> int:
   architecture := system.architecture
   if architecture == system.ARCHITECTURE-ESP32: return 4
   if architecture == system.ARCHITECTURE-ESP32C3: return 2
@@ -390,7 +390,7 @@ interface Protocol:
   */
   constructor pin/gpio.Pin
       --pull-up/bool
-      --memory-blocks/int=default-rmt-channels_:
+      --memory-blocks/int=default-rmt-channel-count_:
     return RmtProtocol pin --pull-up=pull-up --memory-blocks=memory-blocks
 
   /**
@@ -553,7 +553,7 @@ class RmtProtocol implements Protocol:
     many bytes to be read in sequence without allowing any pause.
   Generally, it is recommended to just split read operations into managable chunks.
   */
-  constructor pin/gpio.Pin --pull-up/bool --memory-blocks/int=default-rmt-channels_:
+  constructor pin/gpio.Pin --pull-up/bool --memory-blocks/int=default-rmt-channel-count_:
     pin_ = pin
 
     // The default is slightly above 1us. For 1-wire we prefer a more sensitive filter.
