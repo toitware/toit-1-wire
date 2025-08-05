@@ -5,6 +5,7 @@
 import crypto.crc
 import gpio
 import system show BITS-PER-BYTE
+import system
 import rmt
 
 /**
@@ -343,6 +344,15 @@ class Bus:
     crc.add bytes
     return crc.get-as-int
 
+default-rmt-channel-count_ -> int:
+  architecture := system.architecture
+  if architecture == system.ARCHITECTURE-ESP32: return 4
+  if architecture == system.ARCHITECTURE-ESP32C3: return 2
+  if architecture == system.ARCHITECTURE-ESP32C6: return 2
+  if architecture == system.ARCHITECTURE-ESP32S2: return 4
+  if architecture == system.ARCHITECTURE-ESP32S3: return 4
+  unreachable
+
 /**
 A 1-wire protocol.
 */
@@ -380,7 +390,7 @@ interface Protocol:
   */
   constructor pin/gpio.Pin
       --pull-up/bool
-      --memory-blocks/int=4:
+      --memory-blocks/int=default-rmt-channel-count_:
     return RmtProtocol pin --pull-up=pull-up --memory-blocks=memory-blocks
 
   /**
@@ -543,7 +553,7 @@ class RmtProtocol implements Protocol:
     many bytes to be read in sequence without allowing any pause.
   Generally, it is recommended to just split read operations into managable chunks.
   */
-  constructor pin/gpio.Pin --pull-up/bool --memory-blocks/int=4:
+  constructor pin/gpio.Pin --pull-up/bool --memory-blocks/int=default-rmt-channel-count_:
     pin_ = pin
 
     // The default is slightly above 1us. For 1-wire we prefer a more sensitive filter.
