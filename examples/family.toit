@@ -2,14 +2,13 @@
 // Use of this source code is governed by a Zero-Clause BSD license that can
 // be found in the EXAMPLES_LICENSE file.
 
-import gpio
 import one-wire
 import one-wire.family as one-wire
 
 DATA-PIN ::= 32
 
 main:
-  bus := one-wire.Bus (gpio.Pin 32)
+  bus := one-wire.Bus 32
   print "Listing all devices on bus:"
   bus.do:
     family-id := one-wire.family-id --device-id=it
