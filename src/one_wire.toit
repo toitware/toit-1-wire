@@ -390,6 +390,8 @@ interface Protocol:
 
   See $RmtProtocol.constructor.
   */
+  // __TYPE-MIGRATION__ pin: gpio.Pin. Deprecated. Provide an integer instead.
+  // __TYPE-MIGRATION__ pin: int
   constructor pin/any
       --pull-up/bool
       --memory-blocks/int=default-rmt-channel-count_:
