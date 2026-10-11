@@ -1,4 +1,5 @@
 // Copyright (C) 2022 Toitware ApS. All rights reserved.
+// Copyright (C) 2026 Toit contributors.
 // Use of this source code is governed by an MIT-style license that can be
 // found in the LICENSE file.
 
@@ -11,7 +12,8 @@ import rmt
 /**
 Support for 1-wire protocol.
 
-The 1-wire protocol is implemented with ESP32's hardware supported RMT module.
+The default implementation uses ESP32's RMT module. The optional `hardware`
+  library provides a backend for dedicated 1-wire controllers.
 */
 
 /**
@@ -155,8 +157,7 @@ class Bus:
   /**
   Reads $count bits from the pin.
 
-  The parameter $count must satisfy 0 <= $count <= 8. That is,
-    at most one byte can be read at a time.
+  The parameter $count must satisfy 0 <= $count <= 64.
   */
   read-bits count/int -> int:
     return (protocol_ --no-power).read-bits count
@@ -438,8 +439,7 @@ interface Protocol:
   /**
   Reads $count bits from the pin.
 
-  The parameter $count must satisfy 0 <= $count <= 8. That is,
-    at most one byte can be read at a time.
+  The parameter $count must satisfy 0 <= $count <= 64.
   */
   read-bits count/int -> int
 

@@ -4,6 +4,12 @@
 
 file(GLOB TESTS RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} "*_test.toit" "*-test.toit")
 
+option(ONE_WIRE_HARDWARE_TESTS "Test the optional backend (requires an SDK with one_wire primitives)" OFF)
+if(NOT ONE_WIRE_HARDWARE_TESTS)
+  list(REMOVE_ITEM TESTS hardware_contract_test.toit hardware_lifecycle_test.toit)
+  message(STATUS "Optional hardware backend tests disabled; enable ONE_WIRE_HARDWARE_TESTS with a matching SDK")
+endif()
+
 # Add windows exe extension.
 set(TOIT "toit${CMAKE_EXECUTABLE_SUFFIX}" CACHE FILEPATH "The executable used to run the tests")
 set(TEST_TIMEOUT 40 CACHE STRING "The maximal amount of time each test is allowed to run")
